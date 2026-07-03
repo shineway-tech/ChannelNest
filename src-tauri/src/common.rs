@@ -19,6 +19,17 @@ pub(super) fn encode_query(value: &str) -> String {
     form_urlencoded::byte_serialize(value.as_bytes()).collect()
 }
 
+#[cfg(target_os = "windows")]
+pub(super) fn suppress_command_window(command: &mut Command) {
+    use std::os::windows::process::CommandExt;
+
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    command.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(target_os = "windows"))]
+pub(super) fn suppress_command_window(_command: &mut Command) {}
+
 pub(super) fn open_external_url(url: &str) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     let mut command = {
@@ -40,6 +51,8 @@ pub(super) fn open_external_url(url: &str) -> Result<(), String> {
         command.arg(url);
         command
     };
+
+    suppress_command_window(&mut command);
 
     command
         .spawn()

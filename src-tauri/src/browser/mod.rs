@@ -93,6 +93,7 @@ pub(crate) fn open_managed_browser_login_session(
         .arg("--disable-features=Translate")
         .arg("--new-window")
         .arg(login_url);
+    suppress_command_window(&mut command);
     let child = command
         .spawn()
         .map_err(|error| format!("启动浏览器登录窗口失败: {error}"))?;
@@ -401,6 +402,7 @@ pub(crate) fn managed_browser_fetch_kuaishou_api_with_cookie_headless(
         .arg("--disable-features=Translate")
         .arg("--window-size=1280,900")
         .arg("about:blank");
+    suppress_command_window(&mut command);
     let child = command
         .spawn()
         .map_err(|error| format!("启动快手后台数据同步失败: {error}"))?;
@@ -555,6 +557,7 @@ pub(crate) fn managed_browser_fetch_kuaishou_home_info_headless(
         .arg("--disable-features=Translate")
         .arg("--window-size=1280,900")
         .arg(platform.creator_home_url);
+    suppress_command_window(&mut command);
     let child = command
         .spawn()
         .map_err(|error| format!("启动快手后台资料同步失败: {error}"))?;
@@ -694,9 +697,10 @@ fn terminate_managed_browser_process(process_id: u32, platform_id: &str) {
     if process_id == 0 {
         return;
     }
-    let status = Command::new("taskkill")
-        .args(["/PID", &process_id.to_string(), "/T", "/F"])
-        .status();
+    let mut command = Command::new("taskkill");
+    command.args(["/PID", &process_id.to_string(), "/T", "/F"]);
+    suppress_command_window(&mut command);
+    let status = command.status();
     eprintln!("[managed-auth:{platform_id}] taskkill pid={process_id} status={status:?}");
 }
 
@@ -856,6 +860,7 @@ fn launch_managed_browser(launch: ManagedBrowserLaunch) -> Result<(), String> {
         .arg("--disable-features=Translate")
         .arg("--new-window")
         .arg(&launch.url);
+    suppress_command_window(&mut command);
 
     command
         .spawn()
