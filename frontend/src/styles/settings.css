@@ -22,9 +22,7 @@
   gap: 8px;
 }
 
-.settings-card,
-.placeholder-panel,
-.activity-panel {
+.settings-card {
   background: rgba(8, 27, 31, 0.72);
   border: 1px solid var(--line-strong);
   border-radius: 8px;
@@ -32,12 +30,9 @@
 }
 
 .theme-light .settings-card,
-.theme-light .placeholder-panel,
-.theme-light .activity-panel,
 .theme-light .release-controls,
 .theme-light .release-card,
-.theme-light .platform-panel,
-.theme-light .account-panel {
+.theme-light .platform-panel {
   background: rgba(255, 255, 255, 0.86);
   box-shadow: 0 18px 42px rgba(21, 67, 74, 0.12);
 }
@@ -67,10 +62,6 @@
   height: 34px;
 }
 
-.settings-card.wide {
-  grid-column: 1 / -1;
-}
-
 .settings-card-form {
   grid-template-columns: minmax(0, 1fr);
   align-items: flex-start;
@@ -87,40 +78,39 @@
   justify-content: flex-end;
 }
 
-.settings-card h2,
-.placeholder-panel h2,
-.activity-row h3 {
+.settings-card h2 {
   font-size: 17px;
 }
 
-.settings-card p,
-.placeholder-panel p,
-.activity-row p {
+.settings-card p {
   margin-top: 8px;
   color: var(--muted);
 }
-
-.placeholder-panel {
-  min-height: 420px;
-  display: grid;
-  place-items: center;
-  align-content: center;
-  gap: 12px;
-  padding: 32px;
-  text-align: center;
+.settings-section-head,
+.email-status-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
 }
 
-.placeholder-icon {
-  width: 62px;
-  height: 62px;
-  display: grid;
-  place-items: center;
-  border-radius: 18px;
+.settings-section-head {
+  margin-bottom: 16px;
+}
+
+.settings-section-head h2,
+.email-status-card h2 {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.settings-section-head span,
+.email-status-card span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.email-status-card strong {
   color: var(--green);
-  background: rgba(22, 230, 138, 0.12);
-}
-
-.placeholder-icon .svg-icon {
-  width: 28px;
-  height: 28px;
+  font-size: 12px;
 }

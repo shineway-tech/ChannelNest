@@ -5,6 +5,40 @@ export function releaseHistoryForLanguage(language: LanguageMode): ReleaseHistor
   if (language === "en") {
     return [
       {
+        version: "1.1.0",
+        date: "2026.07.16",
+        icon: "spark",
+        sections: [
+          {
+            icon: "wallet",
+            title: "Membership, Points, and Payments",
+            items: [
+              "Added membership and points center with membership plans, point packages, point ledger, and order history",
+              "Connected Alipay website payment with QR-code checkout, order polling, callback verification, and entitlement delivery",
+              "Added email verification registration and sign-in, friendlier error prompts, and in-app message center",
+            ],
+          },
+          {
+            icon: "spark",
+            title: "Content Generation",
+            items: [
+              "Added copy generation with streaming output and clearer structured options",
+              "Added AI image generation with 1K, 2K, and 4K quality choices, multi-image task handling, and progressive result display",
+              "Integrated Baoyu image prompt guidance for general social images and infographic-style assets",
+            ],
+          },
+          {
+            icon: "folder",
+            title: "Resource Library and Publishing",
+            items: [
+              "Generated copy and images can be saved into the local resource library and reused in publishing",
+              "Improved resource selection, image preview stability, publish media spacing, and image list layout",
+              "Refined Bilibili article publishing, visibility settings, scheduled publishing, and cross-platform publish behavior",
+            ],
+          },
+        ],
+      },
+      {
         version: "1.0.1",
         date: "2026.07.02",
         icon: "spark",
@@ -74,6 +108,40 @@ export function releaseHistoryForLanguage(language: LanguageMode): ReleaseHistor
   }
 
   return [
+    {
+      version: "1.1.0",
+      date: "2026.07.16",
+      icon: "spark",
+      sections: [
+        {
+          icon: "wallet",
+          title: "会员、积分与支付",
+          items: [
+            "新增会员与积分中心，支持会员套餐、积分充值、积分记录和订单记录",
+            "接入支付宝网站支付，支持二维码支付、订单轮询、异步回调验签和会员/积分发放",
+            "新增邮箱验证码注册登录、友好的错误提示和消息中心",
+          ],
+        },
+        {
+          icon: "spark",
+          title: "内容生成",
+          items: [
+            "新增文案生成，支持流式输出和更清晰的生成选项",
+            "新增 AI 图片生成，支持 1K、2K、4K 质量选项、多图任务和生成结果逐张展示",
+            "整合宝玉图片提示词体系，支持通用社媒图片和信息图类型资源生成",
+          ],
+        },
+        {
+          icon: "folder",
+          title: "资源库与发布",
+          items: [
+            "生成的文案和图片可保存到本地资源库，并在发布作品时直接使用",
+            "优化资源选择、图片预览稳定性、发布素材间距和图片列表布局",
+            "完善 B 站图文发布、可见范围、定时发布和多平台发布流程",
+          ],
+        },
+      ],
+    },
     {
       version: "1.0.1",
       date: "2026.07.02",

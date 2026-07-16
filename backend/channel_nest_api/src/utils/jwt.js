@@ -9,8 +9,8 @@ class Jwt {
       || config.jwt_secret;
   }
 
-  static generateToken(userId, ttl) {
-    return jwt.sign({ user_id: userId }, Jwt.getSecret(), { expiresIn: ttl });
+  static generateToken(userId, sessionId, ttl) {
+    return jwt.sign({ user_id: userId }, Jwt.getSecret(), { expiresIn: ttl, jwtid: sessionId });
   }
 
   static getTokenName() {
@@ -31,7 +31,11 @@ class Jwt {
     try {
       const result = jwt.verify(token, Jwt.getSecret(), { ignoreExpiration: false });
 
-      return lodash.get(result, 'user_id', null);
+      return {
+        userId: lodash.get(result, 'user_id', null),
+        sessionId: lodash.get(result, 'jti', null),
+        expiresAt: lodash.get(result, 'exp', 0) * 1000,
+      };
     } catch (e) {
       return null;
     }

@@ -1,0 +1,1 @@
+Create one polished image with a clear focal subject, deliberate composition, readable visual hierarchy, and natural detail. Avoid generic stock-photo staging, decorative clutter, accidental text, borders, and mock device frames unless the user explicitly requests them.

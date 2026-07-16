@@ -7,10 +7,16 @@ const AuthUser = sequelize.define('AuthUser', {
     primaryKey: true,
   },
   account: {
-    type: DataTypes.STRING(64),
+    type: DataTypes.STRING(191),
     allowNull: false,
     unique: true,
   },
+  email: {
+    type: DataTypes.STRING(191),
+    allowNull: true,
+    unique: true,
+  },
+  email_verified_at: DataTypes.DATE,
   nickname: {
     type: DataTypes.STRING(64),
     allowNull: false,

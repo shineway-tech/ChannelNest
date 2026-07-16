@@ -121,6 +121,7 @@ pub(crate) struct StartLoginRequest {
     pub(crate) user_id: String,
     pub(crate) platform_id: String,
     pub(crate) login_target: Option<String>,
+    pub(crate) account_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -278,6 +279,151 @@ pub(crate) struct ChannelAccountContent {
     #[serde(default)]
     pub(crate) sync_status: String,
     pub(crate) error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PublishWorkRequest {
+    pub(crate) user_id: String,
+    pub(crate) content_type: String,
+    #[serde(default)]
+    pub(crate) targets: Vec<PublishWorkTargetRequest>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PublishWorkTargetRequest {
+    pub(crate) account_id: String,
+    pub(crate) title: String,
+    pub(crate) body: String,
+    pub(crate) visibility: String,
+    pub(crate) schedule_mode: String,
+    #[serde(default)]
+    pub(crate) scheduled_at: Option<String>,
+    #[serde(default)]
+    pub(crate) media: Vec<PublishWorkMediaRequest>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PublishWorkMediaRequest {
+    pub(crate) name: String,
+    pub(crate) path: String,
+    pub(crate) media_type: String,
+    #[serde(default)]
+    pub(crate) cover_data_url: Option<String>,
+    #[serde(default)]
+    pub(crate) width: Option<u32>,
+    #[serde(default)]
+    pub(crate) height: Option<u32>,
+    #[serde(default)]
+    pub(crate) duration: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LocalMediaMetadataRequest {
+    pub(crate) path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LocalMediaMetadataResponse {
+    pub(crate) size: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LocalResource {
+    pub(crate) id: String,
+    pub(crate) user_id: String,
+    #[serde(rename = "type")]
+    pub(crate) resource_type: String,
+    pub(crate) title: String,
+    #[serde(default)]
+    pub(crate) body: Option<String>,
+    #[serde(default)]
+    pub(crate) path: Option<String>,
+    #[serde(default)]
+    pub(crate) thumbnail_path: Option<String>,
+    #[serde(default)]
+    pub(crate) mime_type: Option<String>,
+    #[serde(default)]
+    pub(crate) width: Option<u32>,
+    #[serde(default)]
+    pub(crate) height: Option<u32>,
+    #[serde(default)]
+    pub(crate) size: Option<u64>,
+    pub(crate) source: String,
+    #[serde(default)]
+    pub(crate) ai_request_id: Option<String>,
+    #[serde(default)]
+    pub(crate) ai_output_id: Option<String>,
+    #[serde(default)]
+    pub(crate) tags: Vec<String>,
+    pub(crate) created_at: DateTime<Utc>,
+    pub(crate) updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CreateLocalResourceRequest {
+    pub(crate) user_id: String,
+    #[serde(rename = "type")]
+    pub(crate) resource_type: String,
+    pub(crate) title: String,
+    #[serde(default)]
+    pub(crate) body: Option<String>,
+    #[serde(default)]
+    pub(crate) path: Option<String>,
+    #[serde(default)]
+    pub(crate) thumbnail_path: Option<String>,
+    #[serde(default)]
+    pub(crate) mime_type: Option<String>,
+    #[serde(default)]
+    pub(crate) width: Option<u32>,
+    #[serde(default)]
+    pub(crate) height: Option<u32>,
+    #[serde(default)]
+    pub(crate) size: Option<u64>,
+    pub(crate) source: String,
+    #[serde(default)]
+    pub(crate) ai_request_id: Option<String>,
+    #[serde(default)]
+    pub(crate) ai_output_id: Option<String>,
+    #[serde(default)]
+    pub(crate) tags: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ListLocalResourcesRequest {
+    pub(crate) user_id: String,
+    #[serde(default, rename = "type")]
+    pub(crate) resource_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DeleteLocalResourceRequest {
+    pub(crate) user_id: String,
+    pub(crate) id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PublishWorkResponse {
+    pub(crate) targets: Vec<PublishWorkTargetResult>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PublishWorkTargetResult {
+    pub(crate) account_id: String,
+    pub(crate) platform_id: String,
+    pub(crate) status: String,
+    pub(crate) message: String,
+    pub(crate) remote_id: Option<String>,
 }
 
 #[derive(Debug)]

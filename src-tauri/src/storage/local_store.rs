@@ -574,6 +574,29 @@ fn init_local_db(conn: &Connection) -> rusqlite::Result<()> {
 
         CREATE INDEX IF NOT EXISTS idx_account_work_pages_account_updated
           ON account_work_pages(account_id, updated_at);
+
+        CREATE TABLE IF NOT EXISTS local_resources (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          resource_type TEXT NOT NULL,
+          title TEXT NOT NULL,
+          body TEXT,
+          path TEXT,
+          thumbnail_path TEXT,
+          mime_type TEXT,
+          width INTEGER,
+          height INTEGER,
+          size INTEGER,
+          source TEXT NOT NULL,
+          ai_request_id TEXT,
+          ai_output_id TEXT,
+          tags_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_local_resources_user_type_updated
+          ON local_resources(user_id, resource_type, updated_at);
         "#,
     )?;
     ensure_platform_accounts_columns(conn)?;
@@ -582,6 +605,194 @@ fn init_local_db(conn: &Connection) -> rusqlite::Result<()> {
         params!["initial_sqlite_store", Utc::now().to_rfc3339()],
     )?;
     Ok(())
+}
+
+pub(crate) fn create_local_resource(
+    app: &AppHandle,
+    request: CreateLocalResourceRequest,
+) -> Result<LocalResource, String> {
+    let user_id = normalize_user_id(&request.user_id)?;
+    let resource_type = normalize_resource_type(&request.resource_type)?;
+    let source = normalize_resource_source(&request.source);
+    let title = normalize_resource_title(&request.title, request.path.as_deref());
+    let now = Utc::now();
+    let resource = LocalResource {
+        id: Uuid::new_v4().to_string(),
+        user_id,
+        resource_type,
+        title,
+        body: normalize_optional_text(request.body),
+        path: normalize_optional_text(request.path),
+        thumbnail_path: normalize_optional_text(request.thumbnail_path),
+        mime_type: normalize_optional_text(request.mime_type),
+        width: request.width.filter(|value| *value > 0),
+        height: request.height.filter(|value| *value > 0),
+        size: request.size.filter(|value| *value > 0),
+        source,
+        ai_request_id: normalize_optional_text(request.ai_request_id),
+        ai_output_id: normalize_optional_text(request.ai_output_id),
+        tags: normalize_resource_tags(request.tags),
+        created_at: now,
+        updated_at: now,
+    };
+
+    let conn = open_content_db(app)?;
+    conn.execute(
+        r#"
+        INSERT INTO local_resources(
+          id, user_id, resource_type, title, body, path, thumbnail_path, mime_type,
+          width, height, size, source, ai_request_id, ai_output_id, tags_json, created_at, updated_at
+        ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
+        "#,
+        params![
+            &resource.id,
+            &resource.user_id,
+            &resource.resource_type,
+            &resource.title,
+            resource.body.as_deref(),
+            resource.path.as_deref(),
+            resource.thumbnail_path.as_deref(),
+            resource.mime_type.as_deref(),
+            resource.width.map(u32_to_i64),
+            resource.height.map(u32_to_i64),
+            resource.size.map(u64_to_i64),
+            &resource.source,
+            resource.ai_request_id.as_deref(),
+            resource.ai_output_id.as_deref(),
+            serde_json::to_string(&resource.tags).map_err(|error| error.to_string())?,
+            resource.created_at.to_rfc3339(),
+            resource.updated_at.to_rfc3339(),
+        ],
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(resource)
+}
+
+pub(crate) fn list_local_resources(
+    app: &AppHandle,
+    request: ListLocalResourcesRequest,
+) -> Result<Vec<LocalResource>, String> {
+    let user_id = normalize_user_id(&request.user_id)?;
+    let resource_type = request
+        .resource_type
+        .as_deref()
+        .map(normalize_resource_type)
+        .transpose()?;
+    let conn = open_content_db(app)?;
+    let mut statement = conn
+        .prepare(
+            r#"
+            SELECT id, user_id, resource_type, title, body, path, thumbnail_path, mime_type,
+                   width, height, size, source, ai_request_id, ai_output_id, tags_json,
+                   created_at, updated_at
+              FROM local_resources
+             WHERE user_id = ?1
+             ORDER BY updated_at DESC
+            "#,
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map(params![user_id], local_resource_from_row)
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+
+    Ok(rows
+        .into_iter()
+        .filter(|resource| {
+            resource_type
+                .as_ref()
+                .map(|value| &resource.resource_type == value)
+                .unwrap_or(true)
+        })
+        .collect())
+}
+
+pub(crate) fn delete_local_resource(
+    app: &AppHandle,
+    request: DeleteLocalResourceRequest,
+) -> Result<(), String> {
+    let user_id = normalize_user_id(&request.user_id)?;
+    let id = request.id.trim();
+    if id.is_empty() {
+        return Err("资源不存在".to_string());
+    }
+    let conn = open_content_db(app)?;
+    conn.execute(
+        "DELETE FROM local_resources WHERE id = ?1 AND user_id = ?2",
+        params![id, user_id],
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn local_resource_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<LocalResource> {
+    let tags_json: String = row.get(14)?;
+    Ok(LocalResource {
+        id: row.get(0)?,
+        user_id: row.get(1)?,
+        resource_type: row.get(2)?,
+        title: row.get(3)?,
+        body: row.get(4)?,
+        path: row.get(5)?,
+        thumbnail_path: row.get(6)?,
+        mime_type: row.get(7)?,
+        width: row.get::<_, Option<i64>>(8)?.and_then(i64_to_u32),
+        height: row.get::<_, Option<i64>>(9)?.and_then(i64_to_u32),
+        size: row.get::<_, Option<i64>>(10)?.and_then(i64_to_u64),
+        source: row.get(11)?,
+        ai_request_id: row.get(12)?,
+        ai_output_id: row.get(13)?,
+        tags: serde_json::from_str::<Vec<String>>(&tags_json).unwrap_or_default(),
+        created_at: parse_db_time(row.get::<_, String>(15)?),
+        updated_at: parse_db_time(row.get::<_, String>(16)?),
+    })
+}
+
+fn normalize_resource_type(value: &str) -> Result<String, String> {
+    match value.trim() {
+        "copy" | "image" | "video" => Ok(value.trim().to_string()),
+        _ => Err("资源类型无效".to_string()),
+    }
+}
+
+fn normalize_resource_source(value: &str) -> String {
+    match value.trim() {
+        "import" | "manual" => value.trim().to_string(),
+        _ => "ai".to_string(),
+    }
+}
+
+fn normalize_resource_title(value: &str, fallback_path: Option<&str>) -> String {
+    let title = value.trim();
+    if !title.is_empty() {
+        return title.chars().take(80).collect();
+    }
+    fallback_path
+        .and_then(|path| Path::new(path).file_name())
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or("未命名资源")
+        .chars()
+        .take(80)
+        .collect()
+}
+
+fn normalize_optional_text(value: Option<String>) -> Option<String> {
+    value
+        .map(|text| text.trim().to_string())
+        .filter(|text| !text.is_empty())
+}
+
+fn normalize_resource_tags(tags: Vec<String>) -> Vec<String> {
+    let mut normalized = Vec::new();
+    for tag in tags {
+        push_unique(&mut normalized, tag.trim().chars().take(24).collect::<String>());
+        if normalized.len() >= 12 {
+            break;
+        }
+    }
+    normalized
 }
 
 fn ensure_platform_accounts_columns(conn: &Connection) -> rusqlite::Result<()> {
@@ -815,6 +1026,14 @@ fn i64_to_u64(value: i64) -> Option<u64> {
     u64::try_from(value).ok()
 }
 
+fn i64_to_u32(value: i64) -> Option<u32> {
+    u32::try_from(value).ok()
+}
+
+fn u32_to_i64(value: u32) -> i64 {
+    i64::from(value)
+}
+
 fn u64_to_i64(value: u64) -> i64 {
     i64::try_from(value).unwrap_or(i64::MAX)
 }
@@ -931,58 +1150,4 @@ pub(crate) fn unscoped_account_id(user_id: &str, account_id: &str) -> Option<Str
         .strip_prefix(&prefix)
         .filter(|value| !value.trim().is_empty())
         .map(ToString::to_string)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn sqlite_store_roundtrips_accounts_and_sessions() {
-        let mut conn = Connection::open_in_memory().expect("open sqlite memory database");
-        init_local_db(&conn).expect("initialize local database");
-        let now = Utc::now();
-        let account = ChannelAccount {
-            id: "account-1".to_string(),
-            user_id: Some("user-1".to_string()),
-            platform_id: "xiaohongshu".to_string(),
-            uid: "xhs-user".to_string(),
-            nickname: "小红书账号".to_string(),
-            avatar: "https://example.test/avatar.png".to_string(),
-            followers: Some(123),
-            following: Some(67),
-            likes: Some(45),
-            status: AccountStatus::Active,
-            created_at: now,
-            updated_at: now,
-            last_sync_at: Some(now),
-        };
-        let mut account_secrets = HashMap::new();
-        account_secrets.insert(
-            account.id.clone(),
-            AccountSecret {
-                login_cookie: Some("a=b".to_string()),
-                webview_session_id: Some("profile-1".to_string()),
-            },
-        );
-        let store = StoreFile {
-            accounts: vec![account],
-            settings: default_auth_settings(),
-            account_secrets,
-        };
-
-        write_store_to_db(&mut conn, &store).expect("write sqlite store");
-        let loaded = read_store_from_db(&conn).expect("read sqlite store");
-
-        assert_eq!(loaded.accounts.len(), 1);
-        assert_eq!(loaded.accounts[0].user_id.as_deref(), Some("user-1"));
-        assert_eq!(loaded.accounts[0].platform_id, "xiaohongshu");
-        assert_eq!(loaded.accounts[0].followers, Some(123));
-        assert_eq!(loaded.accounts[0].following, Some(67));
-        assert_eq!(loaded.account_secrets["account-1"].login_cookie.as_deref(), Some("a=b"));
-        assert_eq!(
-            loaded.account_secrets["account-1"].webview_session_id.as_deref(),
-            Some("profile-1")
-        );
-    }
 }

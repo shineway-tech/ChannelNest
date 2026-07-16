@@ -235,15 +235,7 @@ p {
   margin: 0;
 }
 
-.account-panel-head p,
-.section-title span,
-.platform-config-card p {
-  color: var(--muted);
-}
-
-.account-actions,
-.auth-actions,
-.modal-foot {
+.auth-actions {
   display: flex;
   align-items: center;
   gap: 10px;

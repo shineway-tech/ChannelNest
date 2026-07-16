@@ -5,6 +5,7 @@
   "main": "bin/www",
   "scripts": {
     "start": "node bin/www",
+    "worker": "node bin/worker",
     "migrate": "node scripts/migrate.js up",
     "migrate:status": "node scripts/migrate.js status",
     "deploy:test": "scripts/deploy-api.sh test",
@@ -32,14 +33,25 @@
   "dependencies": {
     "@honeykid/config": "^1.1.17",
     "@honeykid/ml": "^1.0.5",
+    "alipay-sdk": "^4.14.0",
     "axios": "^1.7.9",
     "ioredis": "^5.7.0",
     "joi": "^18.0.1",
     "jsonwebtoken": "^9.0.2",
+    "koa-body": "^8.0.0",
     "koa-router": "^14.0.0",
     "lodash": "^4.18.1",
     "mysql2": "^3.11.5",
+    "nodemailer": "^9.0.3",
+    "openai": "^6.46.0",
     "redlock": "^5.0.0-beta.2",
-    "sequelize": "^6.37.5"
+    "sequelize": "^6.37.5",
+    "sharp": "^0.35.3",
+    "undici": "^7.28.0"
+  },
+  "overrides": {
+    "@honeykid/ml": {
+      "nodemailer": "9.0.3"
+    }
   }
 }

@@ -75,6 +75,32 @@ pub(crate) async fn load_channel_account_works_page(
 }
 
 #[tauri::command]
+pub(crate) async fn publish_channel_work(
+    app: AppHandle,
+    state: State<'_, RuntimeState>,
+    request: PublishWorkRequest,
+) -> Result<PublishWorkResponse, String> {
+    services::channel_service::publish_channel_work(app, state, request).await
+}
+
+#[tauri::command]
+pub(crate) fn inspect_local_media(
+    request: LocalMediaMetadataRequest,
+) -> Result<LocalMediaMetadataResponse, String> {
+    let path = request.path.trim();
+    if path.is_empty() {
+        return Err("素材路径为空。".to_string());
+    }
+    let metadata = std::fs::metadata(path).map_err(|error| format!("读取素材文件失败: {error}"))?;
+    if !metadata.is_file() {
+        return Err("素材路径不是文件。".to_string());
+    }
+    Ok(LocalMediaMetadataResponse {
+        size: metadata.len(),
+    })
+}
+
+#[tauri::command]
 pub(crate) async fn mark_channel_account_unavailable(
     app: AppHandle,
     state: State<'_, RuntimeState>,

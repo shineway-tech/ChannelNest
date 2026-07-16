@@ -1,11 +1,10 @@
 const { validateBody } = require('@honeykid/ml');
 const Joi = require('joi');
 
-const account = Joi.string().trim().lowercase().min(3)
-  .max(32)
-  .pattern(/^[a-z0-9_-]+$/)
+const email = Joi.string().trim().lowercase().email({ tlds: { allow: false } })
+  .max(191)
   .required()
-  .label('账号');
+  .label('邮箱');
 
 const password = Joi.string().min(6).max(64)
   .required()
@@ -20,18 +19,41 @@ const captcha = {
 };
 
 const checkRegister = validateBody(Joi.object({
-  account,
+  email,
   password,
   nickname: Joi.string().trim().empty('')
     .max(32)
     .label('昵称'),
-  ...captcha,
+  email_code_id: Joi.string().guid({ version: 'uuidv4' }).required(),
+  email_code: Joi.string().pattern(/^\d{6}$/).required(),
 }), { stripUnknown: true });
 
 const checkLogin = validateBody(Joi.object({
-  account,
+  identifier: Joi.string().trim().lowercase().min(3)
+    .max(191)
+    .required()
+    .label('邮箱或账号'),
   password,
+}), { stripUnknown: true });
+
+const checkEmailCode = validateBody(Joi.object({
+  email,
+  scene: Joi.string().valid('register', 'bind_email', 'reset_password').required(),
   ...captcha,
+}), { stripUnknown: true });
+
+const checkBindEmail = validateBody(Joi.object({
+  email,
+  current_password: password.label('当前密码'),
+  email_code_id: Joi.string().guid({ version: 'uuidv4' }).required(),
+  email_code: Joi.string().pattern(/^\d{6}$/).required(),
+}), { stripUnknown: true });
+
+const checkResetPassword = validateBody(Joi.object({
+  email,
+  new_password: password.label('新密码'),
+  email_code_id: Joi.string().guid({ version: 'uuidv4' }).required(),
+  email_code: Joi.string().pattern(/^\d{6}$/).required(),
 }), { stripUnknown: true });
 
 const checkUpdateProfile = validateBody(Joi.object({
@@ -47,6 +69,9 @@ const checkUpdatePassword = validateBody(Joi.object({
 
 module.exports = {
   checkLogin,
+  checkEmailCode,
+  checkBindEmail,
+  checkResetPassword,
   checkRegister,
   checkUpdatePassword,
   checkUpdateProfile,

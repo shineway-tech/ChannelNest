@@ -10,6 +10,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG_FILE="config/config.${DEPLOY_ENV}.json"
 TIMESTAMP="$(date +%Y%m%d%H%M%S)"
 SERVICE_NAME="${APP_NAME}-${DEPLOY_ENV}"
+WORKER_NAME="${SERVICE_NAME}-worker"
 REMOTE_DIR="${REMOTE_BASE}/${SERVICE_NAME}"
 ARCHIVE_NAME="${SERVICE_NAME}-${TIMESTAMP}.tar.gz"
 ARCHIVE_PATH="/tmp/${ARCHIVE_NAME}"
@@ -48,6 +49,7 @@ set -euo pipefail
 APP_NAME="${APP_NAME}"
 DEPLOY_ENV="${DEPLOY_ENV}"
 SERVICE_NAME="${SERVICE_NAME}"
+WORKER_NAME="${WORKER_NAME}"
 REMOTE_DIR="${REMOTE_DIR}"
 RELEASE_DIR="\${REMOTE_DIR}/releases/${TIMESTAMP}"
 ARCHIVE_PATH="\${REMOTE_DIR}/packages/${ARCHIVE_NAME}"
@@ -73,11 +75,16 @@ ln -sfn "\${RELEASE_DIR}" "\${REMOTE_DIR}/current"
 
 if command -v pm2 >/dev/null 2>&1; then
   pm2 delete "\${SERVICE_NAME}" >/dev/null 2>&1 || true
+  pm2 delete "\${WORKER_NAME}" >/dev/null 2>&1 || true
   pm2 start "\${REMOTE_DIR}/current/bin/www" --name "\${SERVICE_NAME}" --cwd "\${REMOTE_DIR}/current" --time
+  pm2 start "\${REMOTE_DIR}/current/bin/worker" --name "\${WORKER_NAME}" --cwd "\${REMOTE_DIR}/current" --time
   pm2 save >/dev/null 2>&1 || true
 else
   if [[ -f "\${REMOTE_DIR}/service.pid" ]]; then
     kill "\$(cat "\${REMOTE_DIR}/service.pid")" >/dev/null 2>&1 || true
+  fi
+  if [[ -f "\${REMOTE_DIR}/worker.pid" ]]; then
+    kill "\$(cat "\${REMOTE_DIR}/worker.pid")" >/dev/null 2>&1 || true
   fi
   if command -v lsof >/dev/null 2>&1; then
     for pid in \$(lsof -tiTCP:"\${PORT}" -sTCP:LISTEN 2>/dev/null || true); do
@@ -87,6 +94,8 @@ else
   cd "\${REMOTE_DIR}/current"
   nohup node bin/www >> "\${REMOTE_DIR}/service.log" 2>&1 &
   echo \$! > "\${REMOTE_DIR}/service.pid"
+  nohup node bin/worker >> "\${REMOTE_DIR}/worker.log" 2>&1 &
+  echo \$! > "\${REMOTE_DIR}/worker.pid"
 fi
 
 echo "Deployed \${SERVICE_NAME} on port \${PORT}"

@@ -1,0 +1,420 @@
+const fs = require('fs');
+const path = require('path');
+
+const root = path.resolve(__dirname, '../../prompts/image');
+const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+
+function options(codes, names) {
+  return codes.map((code) => ({ code, name: names[code][0], nameEn: names[code][1] }));
+}
+
+const socialStyles = ['auto', 'cute', 'fresh', 'warm', 'bold', 'minimal', 'retro', 'pop', 'notion', 'chalkboard', 'study-notes', 'screen-print', 'sketch-notes'];
+const socialLayouts = ['auto', 'sparse', 'balanced', 'dense', 'list', 'comparison', 'flow', 'mindmap', 'quadrant'];
+const infographicStyles = [
+  'auto', 'craft-handmade', 'claymation', 'kawaii', 'storybook-watercolor',
+  'chalkboard', 'cyberpunk-neon', 'bold-graphic', 'aged-academia',
+  'corporate-memphis', 'technical-schematic', 'origami', 'pixel-art',
+  'ui-wireframe', 'subway-map', 'ikea-manual', 'knolling', 'lego-brick',
+  'pop-laboratory', 'morandi-journal', 'retro-pop-grid', 'hand-drawn-edu',
+  'retro-popup-pop',
+];
+const infographicLayouts = [
+  'auto', 'linear-progression', 'binary-comparison', 'comparison-matrix',
+  'hierarchical-layers', 'tree-branching', 'hub-spoke', 'structural-breakdown',
+  'bento-grid', 'iceberg', 'bridge', 'funnel', 'isometric-map', 'dashboard',
+  'periodic-table', 'comic-strip', 'story-mountain', 'jigsaw', 'venn-diagram',
+  'winding-roadmap', 'circular-flow', 'dense-modules',
+];
+const styles = Array.from(new Set([...socialStyles, ...infographicStyles]));
+const layouts = Array.from(new Set([...socialLayouts, ...infographicLayouts]));
+const palettes = [
+  'auto', 'default', 'macaron', 'warm', 'neon', 'ocean', 'forest',
+  'sakura', 'morandi', 'monochrome', 'black-gold', 'sunset', 'chinese-red', 'lavender',
+];
+const paletteProfiles = {
+  auto: 'Choose a restrained, subject-appropriate palette with clear contrast.',
+  default: 'Balanced neutral colors with one clear accent color and natural contrast.',
+  macaron: 'Soft pastel pink, mint, sky blue, lavender, and clean white.',
+  warm: 'Warm coral, peach, amber, and burgundy with soft cream highlights.',
+  neon: 'Electric cyan, magenta, and lime accents on charcoal or near-black.',
+  ocean: 'Deep navy, ocean blue, bright cyan, and crisp white.',
+  forest: 'Forest green, sage, moss, and ivory with natural tonal depth.',
+  sakura: 'Blush pink, sakura rose, muted plum, and clean white.',
+  morandi: 'Muted dusty blue, sage grey, rose grey, and warm neutral grey.',
+  monochrome: 'Black, charcoal, cool grey, and off-white with strong tonal hierarchy.',
+  'black-gold': 'Near-black and graphite with restrained metallic gold and ivory highlights.',
+  sunset: 'Coral, apricot, amber, and deep violet inspired by sunset light.',
+  'chinese-red': 'Chinese red, vermilion, warm white, charcoal, and restrained gold accents.',
+  lavender: 'Lavender, periwinkle, soft blue, and white with gentle cool contrast.',
+};
+const styleProfiles = {
+  auto: 'Choose the most fitting baoyu social-card style for the content. Keep the style internally consistent across the series.',
+  cute: 'Sweet, adorable, girly aesthetic with soft rounded shapes, warm expressions, tiny decorative icons, and friendly visual rhythm.',
+  fresh: 'Clean, refreshing, natural style with airy spacing, light botanical or lifestyle cues, clear labels, and calm optimistic color.',
+  warm: 'Cozy, friendly, approachable style with soft light, warm textures, gentle illustrations, and an intimate storytelling tone.',
+  bold: 'High-impact graphic style with strong contrast, large focal typography, punchy shapes, and clear visual emphasis.',
+  minimal: 'Ultra-clean sophisticated style with restrained decoration, generous whitespace, precise alignment, and one clear focal idea.',
+  retro: 'Vintage, nostalgic, trendy style with old poster cues, muted tones, simple textures, and playful throwback details.',
+  pop: 'Vibrant, energetic, eye-catching style with comic-like shapes, expressive icons, bright accents, and dynamic composition.',
+  notion: 'Minimalist hand-drawn line art, intellectual aesthetic. Use simple doodles, clean black/gray ink, light pastel accents, paper texture, maximum whitespace, and uncluttered compositions.',
+  chalkboard: 'Educational colorful chalkboard style. Use dark board background, chalk strokes, hand-drawn diagrams, arrows, labels, and classroom-note hierarchy.',
+  'study-notes': 'Realistic handwritten study-note photo style. Use blue pen, red annotations, yellow highlighter, paper texture, margin notes, and exam-review hierarchy.',
+  'screen-print': 'Bold poster and screen-print style. Use limited colors, halftone texture, symbolic storytelling, strong silhouettes, and editorial drama.',
+  'sketch-notes': 'Hand-drawn educational infographic style with macaron pastels on warm cream, wobble lines, friendly diagrams, arrows, stickers, and approachable teaching energy.',
+};
+const layoutProfiles = {
+  auto: 'Choose the layout that best matches the source material and requested card position.',
+  sparse: 'Sparse layout: 1-2 points, 60-70% whitespace, one centered focal idea, best for covers, quotes, and high-impact statements.',
+  balanced: 'Balanced layout: 3-4 points, 40-50% whitespace, top-weighted title, evenly distributed supporting content, clear hierarchy.',
+  dense: 'Dense layout: 5-8 points, 20-30% whitespace, organized grid sections, compact but readable spacing, best for knowledge cards and cheat sheets.',
+  list: 'List layout: 4-7 vertical items with clear number or bullet hierarchy, consistent item format, best for checklists, rankings, and step guides.',
+  comparison: 'Comparison layout: two symmetrical sections with clear left/right contrast, divider, and paired labels for before/after or pros/cons.',
+  flow: 'Flow layout: 3-6 connected steps with arrows or progression markers, clear direction from top to bottom or left to right.',
+  mindmap: 'Mind map layout: central topic node with 4-8 radial branches, curved organic connections, and grouped sub-points.',
+  quadrant: 'Quadrant layout: 2x2 grid or circular four-section structure with clear section labels and distinct content in each quadrant.',
+};
+const infographicStyleProfiles = {
+  auto: 'Choose the most fitting professional infographic style for the subject, audience, and selected layout.',
+  'craft-handmade': 'Craft handmade style: hand-drawn paper craft, warm tactile layers, cut-paper shapes, approachable editorial illustration.',
+  claymation: 'Claymation style: soft 3D clay figures and objects, rounded forms, stop-motion feel, playful physical depth.',
+  kawaii: 'Kawaii style: Japanese cute visual language, pastel colors, rounded characters, gentle icons, cheerful readability.',
+  'storybook-watercolor': 'Storybook watercolor style: soft painted textures, whimsical illustration, gentle gradients, narrative warmth.',
+  chalkboard: 'Chalkboard style: chalk on black board, colorful annotations, hand-drawn diagrams, classroom clarity.',
+  'cyberpunk-neon': 'Cyberpunk neon style: dark futuristic base, luminous neon accents, high contrast, data-like glow.',
+  'bold-graphic': 'Bold graphic style: comic-style composition, halftone texture, thick outlines, high-impact labels.',
+  'aged-academia': 'Aged academia style: vintage science illustration, sepia paper, archival diagrams, scholarly tone.',
+  'corporate-memphis': 'Corporate Memphis style: flat vector people, vibrant geometric shapes, modern business clarity.',
+  'technical-schematic': 'Technical schematic style: blueprint and engineering drawing aesthetic, precise linework, labels, callouts, measurement cues.',
+  origami: 'Origami style: folded paper geometry, crisp facets, dimensional paper forms, structured color planes.',
+  'pixel-art': 'Pixel art style: retro 8-bit grid, blocky icons, limited palette, game-like nostalgia.',
+  'ui-wireframe': 'UI wireframe style: grayscale interface mockup, panels, modules, flows, clear information architecture.',
+  'subway-map': 'Subway map style: transit lines, nodes, route colors, clear paths and intersections.',
+  'ikea-manual': 'IKEA manual style: minimal line art, assembly-instruction clarity, numbered parts, simple arrows.',
+  knolling: 'Knolling style: organized flat-lay arrangement, top-down structure, evenly spaced labeled components.',
+  'lego-brick': 'Lego brick style: toy brick construction, modular pieces, playful plastic texture, structured assembly.',
+  'pop-laboratory': 'Pop laboratory style: blueprint grid, coordinate markers, lab precision, vivid experimental accents.',
+  'morandi-journal': 'Morandi journal style: hand-drawn doodles, warm Morandi tones, journal-like annotations, calm editorial softness.',
+  'retro-pop-grid': 'Retro pop grid style: 1970s retro pop art, Swiss grid, thick outlines, warm vintage color blocks.',
+  'hand-drawn-edu': 'Hand-drawn education style: macaron pastels, wobble lines, stick figures, friendly explanatory diagrams.',
+  'retro-popup-pop': 'Retro popup pop style: vintage UI collage, thick outlines, flat pop colors, playful layered panels.',
+};
+const infographicLayoutProfiles = {
+  auto: 'Choose the best infographic information structure from the source content. Prefer bento-grid for mixed topics.',
+  'linear-progression': 'Linear progression layout: timelines, processes, tutorials. Use clear steps, arrows, and chronological or procedural order.',
+  'binary-comparison': 'Binary comparison layout: A vs B, before/after, pros/cons. Use two clear sides and matched criteria.',
+  'comparison-matrix': 'Comparison matrix layout: multi-factor comparisons. Use rows and columns with concise labels and visual scoring.',
+  'hierarchical-layers': 'Hierarchical layers layout: pyramids and priority levels. Stack information from foundation to peak or broad to specific.',
+  'tree-branching': 'Tree branching layout: categories and taxonomies. Show parent-child relationships with branching structure.',
+  'hub-spoke': 'Hub-spoke layout: central concept with related items. Put the main idea in the center and connect supporting nodes.',
+  'structural-breakdown': 'Structural breakdown layout: exploded views and cross-sections. Break a system into parts with callouts.',
+  'bento-grid': 'Bento-grid layout: multiple topics and overview. Use modular cards of varied sizes with clear hierarchy.',
+  iceberg: 'Iceberg layout: surface vs hidden aspects. Split visible top from deeper underlying layers.',
+  bridge: 'Bridge layout: problem to solution. Show two sides and the connection that resolves the gap.',
+  funnel: 'Funnel layout: conversion or filtering. Show narrowing stages, drop-offs, qualification, or prioritization.',
+  'isometric-map': 'Isometric map layout: spatial relationships. Use angled map-like modules to show location, flow, or system geography.',
+  dashboard: 'Dashboard layout: metrics and KPIs. Use data panels, gauges, scorecards, and concise visual summaries.',
+  'periodic-table': 'Periodic table layout: categorized collections. Use tiled cells grouped by category and color.',
+  'comic-strip': 'Comic strip layout: narratives and sequences. Use panels with visual continuity and short captions.',
+  'story-mountain': 'Story mountain layout: plot structure and tension arcs. Show rising action, climax, and resolution.',
+  jigsaw: 'Jigsaw layout: interconnected parts. Use puzzle-like modules that fit together to express dependency.',
+  'venn-diagram': 'Venn diagram layout: overlapping concepts. Show shared and distinct areas with clean labels.',
+  'winding-roadmap': 'Winding roadmap layout: journeys and milestones. Use a curved path with stops and progress markers.',
+  'circular-flow': 'Circular flow layout: cycles and recurring processes. Use loop arrows and repeated stages.',
+  'dense-modules': 'Dense modules layout: high-density data-rich guide. Use many compact sections while preserving readable hierarchy.',
+};
+const paletteGuidance = {
+  auto: 'Let the selected style choose its built-in colors. Keep contrast high enough for readable Chinese text.',
+  default: 'Balanced neutral palette with one clear accent. Use colors to structure content, not as decoration.',
+  macaron: 'Macaron palette: Warm cream #F5F0E8 background, deep charcoal #2C3E50 text, warm gray annotations, macaron blue #A8D8EA, lavender #D5C6E0, mint #B5E5CF, peach #F8D5C4, and coral #E8655A accents. Use rounded pastel blocks for sections and avoid saturated tones.',
+  warm: 'Warm palette: soft peach background, orange, terracotta, golden and rose blocks, sienna accents. Keep the result cozy and earthy.',
+  neon: 'Neon palette: dark purple or charcoal base with electric cyan, magenta, green, pink, and yellow accents. Use sparingly for high-energy futuristic content.',
+  ocean: 'Ocean palette: deep navy, ocean blue, bright cyan, and crisp white. Use clean contrast and calm technical clarity.',
+  forest: 'Forest palette: forest green, sage, moss, and ivory. Use natural texture and grounded contrast.',
+  sakura: 'Sakura palette: blush pink, rose, muted plum, and clean white. Keep it gentle and light.',
+  morandi: 'Morandi palette: muted dusty blue, sage grey, rose grey, and warm neutral grey. Keep saturation low and elegant.',
+  monochrome: 'Monochrome palette: black, charcoal, cool grey, and off-white. Use tone and layout to create hierarchy.',
+  'black-gold': 'Black-gold palette: near-black graphite base with restrained metallic gold and ivory highlights. Keep it premium, not gaudy.',
+  sunset: 'Sunset palette: coral, apricot, amber, and deep violet. Use warm gradients carefully and keep text contrast strong.',
+  'chinese-red': 'Chinese red palette: vermilion, warm white, charcoal, and restrained gold accents. Use festive emphasis without visual noise.',
+  lavender: 'Lavender palette: lavender, periwinkle, soft blue, and white. Keep it calm, soft, and modern.',
+};
+const paletteSwatches = {
+  auto: ['#19e6a2', '#4aa8ff', '#ffcd57', '#ff6b8a'],
+  default: ['#1f2937', '#f8fafc', '#5b8def', '#dbe4f0'],
+  macaron: ['#f4b8d0', '#bce6d2', '#b9d9f4', '#d6c5ef'],
+  warm: ['#d95d4f', '#f2a65a', '#f6c56f', '#7f334c'],
+  neon: ['#12131a', '#00e5ff', '#ff39d1', '#b8ff3d'],
+  ocean: ['#082f49', '#0369a1', '#22d3ee', '#f8fafc'],
+  forest: ['#163a2b', '#4f7455', '#95a985', '#f4f1df'],
+  sakura: ['#f7c7d9', '#e98bab', '#92526f', '#fff8fb'],
+  morandi: ['#7f91a3', '#9ba98f', '#b79a9a', '#d7d1c9'],
+  monochrome: ['#111827', '#4b5563', '#9ca3af', '#f3f4f6'],
+  'black-gold': ['#111111', '#34312d', '#c6a15b', '#f5f0e6'],
+  sunset: ['#ef6f61', '#f6a15f', '#f5c451', '#665191'],
+  'chinese-red': ['#a61b1b', '#d9382c', '#f7f0df', '#d4a547'],
+  lavender: ['#8f7cc3', '#b6a7df', '#a9c6e8', '#f7f5ff'],
+};
+const presets = ['auto', 'knowledge-card', 'checklist', 'concept-map', 'swot', 'tutorial', 'classroom', 'study-guide', 'hand-drawn-edu', 'sketch-card', 'sketch-summary', 'cute-share', 'girly', 'cozy-story', 'product-review', 'nature-flow', 'warning', 'versus', 'clean-quote', 'pro-summary', 'retro-ranking', 'throwback', 'pop-facts', 'hype', 'poster', 'editorial', 'cinematic'];
+const presetProfiles = {
+  auto: { guidance: 'No preset selected. Use the chosen style, layout, and palette directly.' },
+  'knowledge-card': { style: 'notion', layout: 'dense', guidance: 'Knowledge card preset: explain a concept clearly with dense but readable sections, a concise title, and scannable key takeaways.' },
+  checklist: { style: 'notion', layout: 'list', guidance: 'Checklist preset: turn the content into practical list items with check marks, short labels, and consistent item rhythm.' },
+  'concept-map': { style: 'notion', layout: 'mindmap', guidance: 'Concept map preset: show relationships around a central idea using radial branches and grouped subtopics.' },
+  swot: { style: 'notion', layout: 'quadrant', guidance: 'SWOT preset: use four clean sections for strengths, weaknesses, opportunities, and threats or equivalent categories.' },
+  tutorial: { style: 'chalkboard', layout: 'flow', guidance: 'Tutorial preset: show a step-by-step sequence with arrows, numbered stages, and one action per step.' },
+  classroom: { style: 'chalkboard', layout: 'balanced', guidance: 'Classroom preset: explain like a clear board note with title, core diagram, and supporting annotations.' },
+  'study-guide': { style: 'study-notes', layout: 'dense', guidance: 'Study guide preset: make compact review notes with highlights, annotations, and grouped facts.' },
+  'hand-drawn-edu': { style: 'sketch-notes', layout: 'flow', palette: 'macaron', guidance: 'Hand-drawn education preset: friendly sketchnote process card with warm cream background and pastel sections.' },
+  'sketch-card': { style: 'sketch-notes', layout: 'dense', palette: 'macaron', guidance: 'Sketch card preset: dense educational summary with hand-drawn icons, arrows, and pastel section cards.' },
+  'sketch-summary': { style: 'sketch-notes', layout: 'balanced', palette: 'macaron', guidance: 'Sketch summary preset: balanced hand-drawn recap with one main idea and supporting points.' },
+  'cute-share': { style: 'cute', layout: 'balanced', guidance: 'Cute share preset: friendly daily-sharing card with approachable illustrations and soft hierarchy.' },
+  girly: { style: 'cute', layout: 'sparse', guidance: 'Girly preset: sweet cover-style card with a large focal message and delicate decoration.' },
+  'cozy-story': { style: 'warm', layout: 'balanced', guidance: 'Cozy story preset: warm narrative card with gentle pacing and emotional readability.' },
+  'product-review': { style: 'fresh', layout: 'comparison', guidance: 'Product review preset: compare features, pros, cons, and use cases in a clean side-by-side structure.' },
+  'nature-flow': { style: 'fresh', layout: 'flow', guidance: 'Nature flow preset: natural process explanation with calm steps and organic visual cues.' },
+  warning: { style: 'bold', layout: 'list', guidance: 'Warning preset: make key risks or reminders obvious with strong contrast and short list items.' },
+  versus: { style: 'bold', layout: 'comparison', guidance: 'Versus preset: create a clear contrast between two choices, views, or outcomes.' },
+  'clean-quote': { style: 'minimal', layout: 'sparse', guidance: 'Clean quote preset: one memorable sentence or insight with refined whitespace and minimal decoration.' },
+  'pro-summary': { style: 'minimal', layout: 'balanced', guidance: 'Professional summary preset: concise business-like recap with calm hierarchy and restrained visuals.' },
+  'retro-ranking': { style: 'retro', layout: 'list', guidance: 'Retro ranking preset: nostalgic ranked list with poster-like rhythm and vintage texture.' },
+  throwback: { style: 'retro', layout: 'balanced', guidance: 'Throwback preset: balanced retro recap with memory cues and warm old-media texture.' },
+  'pop-facts': { style: 'pop', layout: 'list', guidance: 'Pop facts preset: energetic fun-fact list with bright accents and punchy visual labels.' },
+  hype: { style: 'pop', layout: 'sparse', guidance: 'Hype preset: high-energy cover card with one bold hook and expressive composition.' },
+  poster: { style: 'screen-print', layout: 'sparse', guidance: 'Poster preset: symbolic high-impact cover with limited colors, strong silhouette, and editorial drama.' },
+  editorial: { style: 'screen-print', layout: 'balanced', guidance: 'Editorial preset: cultural or opinion card with poster-like structure and refined contrast.' },
+  cinematic: { style: 'screen-print', layout: 'comparison', guidance: 'Cinematic preset: dramatic comparison with film-poster tension and limited-color storytelling.' },
+};
+const aspectRatios = ['1:1', '4:3', '3:4', '16:9', '9:16'];
+
+const Catalog = {
+  assetTypes: [
+    {
+      code: 'general',
+      name: '通用图片',
+      nameEn: 'General image',
+      defaultAspectRatio: '1:1',
+      styleCodes: ['auto'],
+      layoutCodes: ['auto'],
+      presetCodes: ['auto'],
+    },
+    {
+      code: 'xhs_card',
+      name: '社交图片卡片',
+      nameEn: 'Social image card',
+      defaultAspectRatio: '3:4',
+      styleCodes: socialStyles,
+      layoutCodes: socialLayouts,
+      presetCodes: presets,
+    },
+    {
+      code: 'infographic',
+      name: '信息图',
+      nameEn: 'Infographic',
+      defaultAspectRatio: '9:16',
+      styleCodes: infographicStyles,
+      layoutCodes: infographicLayouts,
+      presetCodes: ['auto'],
+    },
+  ],
+  styles,
+  socialStyles,
+  infographicStyles,
+  styleProfiles,
+  infographicStyleProfiles,
+  styleOptions: options(styles, {
+    auto: ['自动推荐', 'Auto'],
+    cute: ['可爱', 'Cute'],
+    fresh: ['清新', 'Fresh'],
+    warm: ['温暖', 'Warm'],
+    bold: ['醒目', 'Bold'],
+    minimal: ['极简', 'Minimal'],
+    retro: ['复古', 'Retro'],
+    pop: ['波普', 'Pop'],
+    notion: ['Notion 手账', 'Notion'],
+    chalkboard: ['黑板报', 'Chalkboard'],
+    'study-notes': ['学习笔记', 'Study notes'],
+    'screen-print': ['丝网印刷', 'Screen print'],
+    'sketch-notes': ['手绘笔记', 'Sketch notes'],
+    'craft-handmade': ['手作插画', 'Craft handmade'],
+    claymation: ['黏土动画', 'Claymation'],
+    kawaii: ['日系可爱', 'Kawaii'],
+    'storybook-watercolor': ['绘本水彩', 'Storybook watercolor'],
+    'cyberpunk-neon': ['赛博霓虹', 'Cyberpunk neon'],
+    'bold-graphic': ['醒目漫画', 'Bold graphic'],
+    'aged-academia': ['复古学术', 'Aged academia'],
+    'corporate-memphis': ['商务孟菲斯', 'Corporate Memphis'],
+    'technical-schematic': ['技术蓝图', 'Technical schematic'],
+    origami: ['折纸几何', 'Origami'],
+    'pixel-art': ['像素风', 'Pixel art'],
+    'ui-wireframe': ['线框图', 'UI wireframe'],
+    'subway-map': ['地铁图', 'Subway map'],
+    'ikea-manual': ['说明书', 'IKEA manual'],
+    knolling: ['俯拍平铺', 'Knolling'],
+    'lego-brick': ['积木拼搭', 'Lego brick'],
+    'pop-laboratory': ['实验室波普', 'Pop laboratory'],
+    'morandi-journal': ['莫兰迪手账', 'Morandi journal'],
+    'retro-pop-grid': ['复古网格', 'Retro pop grid'],
+    'hand-drawn-edu': ['手绘教学', 'Hand-drawn education'],
+    'retro-popup-pop': ['复古弹窗', 'Retro popup pop'],
+  }),
+  layouts,
+  socialLayouts,
+  infographicLayouts,
+  layoutProfiles,
+  infographicLayoutProfiles,
+  layoutOptions: options(layouts, {
+    auto: ['自动推荐', 'Auto'],
+    sparse: ['留白', 'Sparse'],
+    balanced: ['均衡', 'Balanced'],
+    dense: ['紧凑', 'Dense'],
+    list: ['列表', 'List'],
+    comparison: ['对比', 'Comparison'],
+    flow: ['流程', 'Flow'],
+    mindmap: ['思维导图', 'Mind map'],
+    quadrant: ['四象限', 'Quadrant'],
+    'linear-progression': ['线性进程', 'Linear progression'],
+    'binary-comparison': ['双项对比', 'Binary comparison'],
+    'comparison-matrix': ['对比矩阵', 'Comparison matrix'],
+    'hierarchical-layers': ['层级堆叠', 'Hierarchical layers'],
+    'tree-branching': ['树状分支', 'Tree branching'],
+    'hub-spoke': ['中心辐射', 'Hub spoke'],
+    'structural-breakdown': ['结构拆解', 'Structural breakdown'],
+    'bento-grid': ['便当网格', 'Bento grid'],
+    iceberg: ['冰山图', 'Iceberg'],
+    bridge: ['桥接方案', 'Bridge'],
+    funnel: ['漏斗', 'Funnel'],
+    'isometric-map': ['等距地图', 'Isometric map'],
+    dashboard: ['仪表盘', 'Dashboard'],
+    'periodic-table': ['周期表', 'Periodic table'],
+    'comic-strip': ['漫画分镜', 'Comic strip'],
+    'story-mountain': ['故事山', 'Story mountain'],
+    jigsaw: ['拼图', 'Jigsaw'],
+    'venn-diagram': ['韦恩图', 'Venn diagram'],
+    'winding-roadmap': ['路线图', 'Winding roadmap'],
+    'circular-flow': ['循环流程', 'Circular flow'],
+    'dense-modules': ['密集模块', 'Dense modules'],
+  }),
+  palettes,
+  paletteProfiles,
+  paletteGuidance,
+  paletteOptions: options(palettes, {
+    auto: ['自动推荐', 'Auto'],
+    default: ['默认配色', 'Default'],
+    macaron: ['马卡龙', 'Macaron'],
+    warm: ['暖色', 'Warm'],
+    neon: ['霓虹', 'Neon'],
+    ocean: ['海洋蓝', 'Ocean blue'],
+    forest: ['森林绿', 'Forest green'],
+    sakura: ['樱花粉', 'Sakura pink'],
+    morandi: ['莫兰迪', 'Morandi'],
+    monochrome: ['黑白灰', 'Monochrome'],
+    'black-gold': ['黑金', 'Black & gold'],
+    sunset: ['日落', 'Sunset'],
+    'chinese-red': ['东方红', 'Chinese red'],
+    lavender: ['薰衣草', 'Lavender'],
+  }).map((item) => ({ ...item, colors: paletteSwatches[item.code] })),
+  presets,
+  presetProfiles,
+  presetOptions: options(presets, {
+    auto: ['自动推荐', 'Auto'],
+    'knowledge-card': ['知识卡片', 'Knowledge card'],
+    checklist: ['清单', 'Checklist'],
+    'concept-map': ['概念图', 'Concept map'],
+    swot: ['优势劣势分析', 'SWOT analysis'],
+    tutorial: ['教程步骤', 'Tutorial'],
+    classroom: ['课堂板书', 'Classroom'],
+    'study-guide': ['学习指南', 'Study guide'],
+    'hand-drawn-edu': ['手绘科普', 'Hand-drawn education'],
+    'sketch-card': ['手绘卡片', 'Sketch card'],
+    'sketch-summary': ['手绘总结', 'Sketch summary'],
+    'cute-share': ['可爱分享', 'Cute share'],
+    girly: ['少女风', 'Girly'],
+    'cozy-story': ['温馨故事', 'Cozy story'],
+    'product-review': ['产品测评', 'Product review'],
+    'nature-flow': ['自然流动', 'Nature flow'],
+    warning: ['警示提醒', 'Warning'],
+    versus: ['对比展示', 'Versus'],
+    'clean-quote': ['简洁语录', 'Clean quote'],
+    'pro-summary': ['专业总结', 'Professional summary'],
+    'retro-ranking': ['复古榜单', 'Retro ranking'],
+    throwback: ['怀旧回忆', 'Throwback'],
+    'pop-facts': ['波普知识', 'Pop facts'],
+    hype: ['热门宣传', 'Hype'],
+    poster: ['海报', 'Poster'],
+    editorial: ['杂志编辑', 'Editorial'],
+    cinematic: ['电影感', 'Cinematic'],
+  }),
+  aspectRatios,
+  aspectRatioOptions: options(aspectRatios, {
+    '1:1': ['正方形 · 1:1', 'Square · 1:1'],
+    '4:3': ['标准横图 · 4:3', 'Landscape · 4:3'],
+    '3:4': ['标准竖图 · 3:4', 'Portrait · 3:4'],
+    '16:9': ['宽屏横图 · 16:9', 'Widescreen · 16:9'],
+    '9:16': ['手机竖图 · 9:16', 'Mobile portrait · 9:16'],
+  }),
+  resolutions: {
+    '1k': {
+      priceMicros: 20000,
+      capability: 'ai.image.1k',
+      providerOptions: { quality: 'low' },
+    },
+    '2k': {
+      priceMicros: 30000,
+      capability: 'ai.image.2k',
+      providerOptions: { quality: 'medium' },
+    },
+    '4k': {
+      priceMicros: 60000,
+      capability: 'ai.image.4k',
+      providerOptions: { quality: 'high' },
+    },
+  },
+};
+
+function resolveVisualChoices(input = {}) {
+  if (input.assetType === 'infographic') {
+    return {
+      preset: 'auto',
+      presetProfile: presetProfiles.auto,
+      style: infographicStyles.includes(input.style) && input.style !== 'auto'
+        ? input.style
+        : 'craft-handmade',
+      layout: infographicLayouts.includes(input.layout) && input.layout !== 'auto'
+        ? input.layout
+        : 'bento-grid',
+      palette: palettes.includes(input.palette) && input.palette !== 'auto'
+        ? input.palette
+        : input.palette || 'auto',
+    };
+  }
+  const preset = presets.includes(input.preset) ? input.preset : 'auto';
+  const presetProfile = presetProfiles[preset] || presetProfiles.auto;
+  const explicitStyle = styles.includes(input.style) && input.style !== 'auto';
+  const explicitLayout = layouts.includes(input.layout) && input.layout !== 'auto';
+  const explicitPalette = palettes.includes(input.palette) && input.palette !== 'auto';
+
+  return {
+    preset,
+    presetProfile,
+    style: explicitStyle ? input.style : presetProfile.style || input.style || 'auto',
+    layout: explicitLayout ? input.layout : presetProfile.layout || input.layout || 'auto',
+    palette: explicitPalette ? input.palette : presetProfile.palette || input.palette || 'auto',
+  };
+}
+
+function promptFile(name) {
+  return fs.readFileSync(path.join(root, name), 'utf8').trim();
+}
+
+module.exports = {
+  Catalog,
+  manifest,
+  resolveVisualChoices,
+  prompts: {
+    general: promptFile('general-v1.md'),
+    infographic: promptFile('infographic-v1.md'),
+    safety: promptFile('safety-baseline.md'),
+    socialPlanner: promptFile('social-planner-v1.md'),
+    xhsCard: promptFile('xhs-card-v1.md'),
+  },
+};

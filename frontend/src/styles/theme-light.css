@@ -37,6 +37,12 @@
   border-color: #148f70;
 }
 
+.theme-light .rail-version {
+  color: #496168;
+  background: rgba(255, 255, 255, 0.58);
+  border-radius: 6px;
+}
+
 .theme-light .user-dropdown {
   background: #ffffff;
   border-color: rgba(32, 70, 78, 0.13);
@@ -54,25 +60,18 @@
 }
 
 .theme-light .page-head h1,
-.theme-light .selected-platform h2,
-.theme-light .account-summary strong,
 .theme-light .settings-card h2,
 .theme-light .release-title-block h2,
-.theme-light .release-item h3,
-.theme-light .placeholder-panel h2 {
+.theme-light .release-item h3 {
   color: #1b3339;
 }
 
 .theme-light .platform-panel,
 .theme-light .workspace-panel,
-.theme-light .account-panel,
 .theme-light .settings-card,
-.theme-light .placeholder-panel,
-.theme-light .activity-panel,
 .theme-light .release-controls,
 .theme-light .release-card,
-.theme-light .auth-modal,
-.theme-light .settings-modal {
+.theme-light .auth-modal {
   background: #ffffff;
   border-color: rgba(32, 70, 78, 0.13);
   box-shadow: 0 1px 2px rgba(20, 52, 58, 0.05);
@@ -93,21 +92,19 @@
   box-shadow: none;
 }
 
-.theme-light .platform-search-box {
+.theme-light .platform-search-box,
+.theme-light .publish-search-box,
+.theme-light .publish-search-add {
   color: #7b8c91;
   background: #ffffff;
 }
 
-.theme-light .platform-search-box input {
+.theme-light .platform-search-box input,
+.theme-light .publish-search-box input {
   color: #1b3339;
+  background-color: transparent;
 }
 
-.theme-light .panel-title {
-  border-bottom-color: rgba(32, 70, 78, 0.1);
-}
-
-.theme-light .panel-title strong,
-.theme-light .placeholder-icon,
 .theme-light .release-version-icon,
 .theme-light .release-icon {
   color: #0f765e;
@@ -198,14 +195,10 @@
   color: #0d5f4e;
 }
 
-.theme-light .account-summary span,
 .theme-light .page-head p,
-.theme-light .account-panel-head p,
 .theme-light .settings-card p,
-.theme-light .placeholder-panel p,
 .theme-light .release-title-block span,
-.theme-light .release-item ul,
-.theme-light .activity-row p {
+.theme-light .release-item ul {
   color: #687b80;
 }
 
@@ -279,8 +272,7 @@
 .theme-light .metric-card,
 .theme-light .content-row,
 .theme-light .latest-work-card,
-.theme-light .account-data-row,
-.theme-light .activity-row {
+.theme-light .account-data-row {
   background: #f6f9f9;
   border-color: transparent;
 }
@@ -352,6 +344,21 @@
 .theme-light input[readonly] {
   color: #687b80;
   background-color: #f2f6f7;
+}
+
+.theme-light .publish-account-field-grid select {
+  color: #1b3339;
+  border-color: rgba(32, 70, 78, 0.16);
+  background-color: #ffffff;
+  background-image:
+    linear-gradient(45deg, transparent 50%, #60767b 50%),
+    linear-gradient(135deg, #60767b 50%, transparent 50%);
+}
+
+.theme-light .publish-account-field-grid select:hover,
+.theme-light .publish-account-field-grid select:focus {
+  border-color: rgba(20, 143, 112, 0.32);
+  background-color: #f9fcfb;
 }
 
 .theme-light .toast {

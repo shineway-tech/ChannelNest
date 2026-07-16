@@ -1,11 +1,19 @@
 import type {
   ChannelAccountContent,
-  ChannelComment,
+  ChannelAccountOverview,
+  ChannelOverviewMetric,
   ChannelWork,
+  ChannelWorkType,
   ChannelWorksPage,
   ContentTab,
 } from "../domain/channel-content";
+import {
+  supportsAccountContent,
+  supportsTypedWorks,
+  supportsWorksPages,
+} from "../domain/channel-content";
 import type { ChannelAccount, LanguageMode, PlatformInfo } from "../domain/types";
+import { normalizeChannelPlatformId } from "../domain/platforms";
 import type { CopyText } from "../i18n/copy";
 import { formatDate, formatFollowers, statusLabel } from "../utils/format";
 import { escapeAttribute, escapeHtml } from "../utils/html";
@@ -32,11 +40,10 @@ export interface ChannelsPageState {
   selectedAccountContentLoading: boolean;
   selectedWorksPages: ChannelWorksPage[];
   selectedWorksLoading: boolean;
-  selectedWorkType: "video" | "article";
+  selectedWorkType: ChannelWorkType;
   overviewPeriod: OverviewPeriod;
   activeTab: ContentTab;
   works: ChannelWork[];
-  comments: ChannelComment[];
   platforms: PlatformInfo[];
   searchQuery: string;
   hasSearchResults: boolean;
@@ -61,7 +68,6 @@ export function renderChannelsPage({
   overviewPeriod,
   activeTab,
   works,
-  comments,
   platforms,
   searchQuery,
   hasSearchResults,
@@ -71,9 +77,6 @@ export function renderChannelsPage({
   const targetAccounts = selectedAccount ? [selectedAccount] : selectedAccounts;
   const targetAccountCount = targetAccounts.length;
   const targetActiveCount = targetAccounts.filter((item) => item.status === "active").length;
-  const totalViews = works.reduce((sum, item) => sum + (item.views || 0), 0);
-  const totalLikes = works.reduce((sum, item) => sum + (item.likes || 0), 0);
-  const pendingComments = comments.filter((item) => item.status === "unread" || item.status === "risk").length;
   const workspaceState: WorkspaceTabState = {
     text,
     language,
@@ -85,16 +88,12 @@ export function renderChannelsPage({
     activeAccountCount: targetActiveCount,
     connectedCount: targetAccountCount,
     works,
-    comments,
     accountContent: selectedAccountContent,
     accountContentLoading: selectedAccountContentLoading,
     worksPages: selectedWorksPages,
     worksLoading: selectedWorksLoading,
     selectedWorkType,
     overviewPeriod,
-    totalViews,
-    totalLikes,
-    pendingComments,
     formatFollowersTotal,
   };
 
@@ -149,16 +148,12 @@ interface WorkspaceTabState {
   activeAccountCount: number;
   connectedCount: number;
   works: ChannelWork[];
-  comments: ChannelComment[];
   accountContent: ChannelAccountContent | null;
   accountContentLoading: boolean;
   worksPages: ChannelWorksPage[];
   worksLoading: boolean;
-  selectedWorkType: "video" | "article";
+  selectedWorkType: ChannelWorkType;
   overviewPeriod: OverviewPeriod;
-  totalViews: number;
-  totalLikes: number;
-  pendingComments: number;
   formatFollowersTotal: (items: ChannelAccount[]) => string;
 }
 
@@ -201,7 +196,7 @@ function renderWorkspaceHead({
         ${
           selectedAccount
             ? `${accountUnavailable
-                ? `<button class="workspace-action" type="button" data-login="${escapeAttribute(selectedAccount.platformId)}"${selectedAccount.platformId === "xiaohongshu" ? ' data-login-target="creator"' : ""} title="${text.reloginAccount}" ${selectedAccountRefreshing ? "disabled" : ""}>${icon("user")}<span>${text.reloginAccount}</span></button>`
+                ? `<button class="workspace-action" type="button" data-login="${escapeAttribute(normalizeChannelPlatformId(selectedAccount.platformId))}" data-login-account="${escapeAttribute(selectedAccount.id)}"${normalizeChannelPlatformId(selectedAccount.platformId) === "xiaohongshu" ? ' data-login-target="creator"' : ""} title="${text.reloginAccount}" ${selectedAccountRefreshing ? "disabled" : ""}>${icon("user")}<span>${text.reloginAccount}</span></button>`
                 : `<button class="workspace-action" type="button" data-open-homepage="${escapeAttribute(selectedAccount.id)}" title="${text.homepage}" ${selectedAccountOpeningHomepage || selectedAccountRefreshing ? "disabled" : ""}>${icon("home")}<span>${text.homepage}</span></button>`
               }
               <button class="workspace-action ${selectedAccountRefreshing ? "is-loading" : ""}" type="button" data-refresh-account="${escapeAttribute(selectedAccount.id)}" title="${text.refresh}" ${selectedAccountRefreshing ? "disabled" : ""}>${icon("refresh")}<span>${selectedAccountRefreshing ? text.refreshing : text.refresh}</span></button>
@@ -244,17 +239,11 @@ function renderHeadMetric(label: string, value: string) {
   `;
 }
 
-function renderWorkspaceTabs(text: CopyText, activeTab: ContentTab, state: WorkspaceTabState) {
+function renderWorkspaceTabs(text: CopyText, activeTab: ContentTab) {
   const tabs: Array<{ id: ContentTab; label: string }> = [
     { id: "overview", label: text.overviewTab },
     { id: "works", label: text.worksTab },
   ];
-  if (!(state.selectedAccount && ["xiaohongshu", "wechat-channels", "douyin", "bilibili", "kuaishou"].includes(state.selectedPlatform.id))) {
-    tabs.push(
-      { id: "comments", label: text.commentsTab },
-      { id: "data", label: text.dataTab },
-    );
-  }
 
   return `
     <div class="workspace-tabs" role="tablist">
@@ -272,22 +261,16 @@ function renderWorkspaceTabs(text: CopyText, activeTab: ContentTab, state: Works
 }
 
 function renderPlatformWorkspace(state: WorkspaceTabState) {
-  switch (state.selectedPlatform.id) {
-    default:
-      return renderDefaultPlatformWorkspace(state);
-  }
+  return renderDefaultPlatformWorkspace(state);
 }
 
 function renderAccountWorkspace(state: WorkspaceTabState) {
-  switch (state.selectedPlatform.id) {
-    default:
-      return `
-        ${renderWorkspaceTabs(state.text, state.activeTab, state)}
-        <div class="workspace-body">
-          ${renderAccountWorkspaceTab(state)}
-        </div>
-      `;
-  }
+  return `
+    ${renderWorkspaceTabs(state.text, state.activeTab)}
+    <div class="workspace-body">
+      ${renderAccountWorkspaceTab(state)}
+    </div>
+  `;
 }
 
 function renderDefaultPlatformWorkspace(state: WorkspaceTabState) {
@@ -302,7 +285,7 @@ function renderDefaultPlatformWorkspace(state: WorkspaceTabState) {
       formatAccountMetricTotal(selectedAccounts, "likes", language),
     ),
   ];
-  if (!platformHidesLastSyncMetric(selectedPlatform.id)) {
+  if (!supportsAccountContent(selectedPlatform.id)) {
     metrics.push(renderMetric(text.lastSyncLabel, latestSyncText(selectedAccounts, text, language)));
   }
 
@@ -324,31 +307,14 @@ function renderDefaultPlatformWorkspace(state: WorkspaceTabState) {
   `;
 }
 
-function platformHidesLastSyncMetric(platformId: string) {
-  return ["xiaohongshu", "wechat-channels", "douyin", "bilibili", "kuaishou"].includes(platformId);
-}
-
 function renderAccountWorkspaceTab(state: WorkspaceTabState) {
-  if (["xiaohongshu", "wechat-channels", "douyin", "bilibili", "kuaishou"].includes(state.selectedPlatform.id) && state.activeTab !== "works") {
-    return renderOverviewView({ ...state, activeTab: "overview" });
-  }
   if (state.activeTab === "works") return renderWorksView(state);
-  if (state.activeTab === "comments") return renderCommentsView(state);
-  if (state.activeTab === "data") return renderDataView(state);
-  return renderOverviewView(state);
+  return renderOverviewView({ ...state, activeTab: "overview" });
 }
 
 function renderOverviewView(state: WorkspaceTabState) {
-  const {
-    text,
-    language,
-    allSelectedAccounts,
-    selectedAccount,
-    works,
-    comments,
-  } = state;
-  const account = selectedAccount || state.selectedAccounts[0] || null;
-  if (!account) return renderEmpty(text.noAccountDesc);
+  const { text, language, allSelectedAccounts, selectedAccount, works } = state;
+  if (!selectedAccount) return renderEmpty(text.noAccountDesc);
   if (state.selectedPlatform.id === "xiaohongshu" && selectedAccount) {
     return renderXhsOverviewView(state);
   }
@@ -364,20 +330,8 @@ function renderOverviewView(state: WorkspaceTabState) {
   if (state.selectedPlatform.id === "kuaishou" && selectedAccount) {
     return renderKuaishouOverviewView(state);
   }
-  const showHeaderStats = Boolean(selectedAccount);
-
   return `
-    ${
-      showHeaderStats
-        ? ""
-        : `<div class="metric-grid">
-            ${renderMetric(text.totalFans, formatFollowers(account.followers, language))}
-            ${renderMetric(text.followingLabel, formatOptionalNumber(account.following, text.followingPending, language))}
-            ${renderMetric(text.likesLabel, formatOptionalNumber(account.likes, text.likesPending, language))}
-            ${renderMetric(text.lastSyncLabel, accountSyncText(account, text, language))}
-          </div>`
-    }
-    <div class="workspace-columns ${showHeaderStats ? "no-top-metrics" : ""}">
+    <div class="workspace-columns no-top-metrics">
       <section class="content-block">
         <div class="content-block-head">
           <h3>${text.recentWorks}</h3>
@@ -387,13 +341,54 @@ function renderOverviewView(state: WorkspaceTabState) {
           ${works.length ? works.slice(0, 4).map((work) => renderWorkRow(work, allSelectedAccounts, text, language)).join("") : renderEmpty(text.noWorks)}
         </div>
       </section>
-      <section class="content-block">
-        <div class="content-block-head">
-          <h3>${text.recentComments}</h3>
-          <span>${formatNumber(comments.length, language)}</span>
+    </div>
+  `;
+}
+
+type OverviewMetricMode = "plain" | "trend" | "comparison";
+type DisplayOverviewMetric = Omit<ChannelOverviewMetric, "key"> & { key?: string };
+
+interface PlatformOverviewOptions {
+  className?: string;
+  toolbar: string;
+  overview?: ChannelAccountOverview | null;
+  emptyMetrics: DisplayOverviewMetric[];
+  metricMode: OverviewMetricMode;
+  latestWork?: ChannelWork | null;
+  renderLatestWork: (work: ChannelWork) => string;
+  showWorkTypeToggle?: boolean;
+}
+
+function renderPlatformOverview(state: WorkspaceTabState, options: PlatformOverviewOptions) {
+  const { accountContent, text } = state;
+  const className = options.className ? ` ${options.className}` : "";
+  if (state.accountContentLoading && !accountContent) {
+    return `
+      <div class="xhs-overview${className}">
+        ${options.toolbar}
+        ${renderAccountContentLoading()}
+      </div>
+    `;
+  }
+
+  const metrics = options.overview?.metrics?.length ? options.overview.metrics : options.emptyMetrics;
+  const syncError = accountContent?.error || options.overview?.error || "";
+  const latestAction = options.showWorkTypeToggle
+    ? renderWorkTypeSegmented(text, state.selectedWorkType)
+    : `<span>${options.latestWork ? "1" : "0"}</span>`;
+  return `
+    <div class="xhs-overview${className}">
+      ${options.toolbar}
+      ${syncError ? `<div class="sync-inline-error">${escapeHtml(syncError)}</div>` : ""}
+      ${renderOverviewMetricGrid(metrics, options.metricMode)}
+      ${options.overview?.summary ? `<p class="xhs-summary">${escapeHtml(options.overview.summary)}</p>` : ""}
+      <section class="content-block latest-work-block">
+        <div class="content-block-head latest-work-head">
+          <h3>${text.latestWork}</h3>
+          ${latestAction}
         </div>
         <div class="content-list compact">
-          ${comments.length ? comments.slice(0, 5).map((comment) => renderCommentRow(comment, allSelectedAccounts, text, language)).join("") : renderEmpty(text.noComments)}
+          ${options.latestWork ? options.renderLatestWork(options.latestWork) : renderEmpty(text.noWorks)}
         </div>
       </section>
     </div>
@@ -402,177 +397,83 @@ function renderOverviewView(state: WorkspaceTabState) {
 
 function renderXhsOverviewView(state: WorkspaceTabState) {
   const { text, language, accountContent, overviewPeriod } = state;
-  const toolbar = renderXhsOverviewToolbar(text, overviewPeriod);
-
-  if (state.accountContentLoading && !accountContent) {
-    return `
-      <div class="xhs-overview">
-        ${toolbar}
-        ${renderAccountContentLoading()}
-      </div>
-    `;
-  }
-
   const overview = overviewPeriod === 30 ? accountContent?.overviewThirty : accountContent?.overviewSeven;
   const latestWork =
-    accountContent?.latestWork ||
-    (overviewPeriod === 30
-      ? accountContent?.latestWorkThirty || null
-      : accountContent?.latestWorkSeven || null);
-  const syncError = accountContent?.error || overview?.error || "";
-
-  return `
-    <div class="xhs-overview">
-      ${toolbar}
-      ${syncError ? `<div class="sync-inline-error">${escapeHtml(syncError)}</div>` : ""}
-      <div class="xhs-metric-grid">
-        ${(overview?.metrics?.length ? overview.metrics : emptyXhsMetrics()).map((metric) => renderXhsMetric(metric)).join("")}
-      </div>
-      ${overview?.summary ? `<p class="xhs-summary">${escapeHtml(overview.summary)}</p>` : ""}
-      <section class="content-block latest-work-block">
-        <div class="content-block-head">
-          <h3>${text.latestWork}</h3>
-          <span>${latestWork ? "1" : "0"}</span>
-        </div>
-        <div class="content-list compact">
-          ${latestWork ? renderXhsLatestWork(latestWork, state.allSelectedAccounts, text, language) : renderEmpty(text.noWorks)}
-        </div>
-      </section>
-    </div>
-  `;
-}
-
-function renderXhsOverviewToolbar(text: CopyText, overviewPeriod: number) {
-  return renderOverviewPeriodToolbar(text, overviewPeriod, {
-    title: text.noteOverviewTitle,
-    periods: [7, 30],
+    overviewPeriod === 30
+      ? accountContent?.latestWorkThirty || accountContent?.latestWork || null
+      : accountContent?.latestWorkSeven || accountContent?.latestWork || null;
+  return renderPlatformOverview(state, {
+    toolbar: renderOverviewPeriodToolbar(text, overviewPeriod, {
+      title: text.noteOverviewTitle,
+      periods: [7, 30],
+    }),
+    overview,
+    emptyMetrics: emptyXhsMetrics(),
+    metricMode: "comparison",
+    latestWork,
+    renderLatestWork: (work) => renderXhsLatestWork(work, state.allSelectedAccounts, text, language),
   });
 }
 
 function renderDouyinOverviewView(state: WorkspaceTabState) {
   const { text, language, accountContent, overviewPeriod } = state;
-  const toolbar = renderOverviewPeriodToolbar(text, overviewPeriod, {
-    title: text.douyinOverviewTitle,
-    periods: [1, 7, 30],
-  });
-
-  if (state.accountContentLoading && !accountContent) {
-    return `
-      <div class="xhs-overview douyin-overview">
-        ${toolbar}
-        ${renderAccountContentLoading()}
-      </div>
-    `;
-  }
-
   const overview = overviewPeriod === 1
     ? accountContent?.overviewYesterday
     : overviewPeriod === 30
       ? accountContent?.overviewThirty
       : accountContent?.overviewSeven;
-  const syncError = accountContent?.error || overview?.error || "";
-  const metrics = overview?.metrics?.length ? overview.metrics : emptyDouyinMetrics();
   const latestWork = accountContent?.latestWork || null;
-
-  return `
-    <div class="xhs-overview douyin-overview">
-      ${toolbar}
-      ${syncError ? `<div class="sync-inline-error">${escapeHtml(syncError)}</div>` : ""}
-      ${renderAdaptiveMetricGrid(metrics)}
-      ${overview?.summary ? `<p class="xhs-summary">${escapeHtml(overview.summary)}</p>` : ""}
-      <section class="content-block latest-work-block">
-        <div class="content-block-head">
-          <h3>${text.latestWork}</h3>
-          <span>${latestWork ? "1" : "0"}</span>
-        </div>
-        <div class="content-list compact">
-          ${latestWork ? renderDouyinLatestWork(latestWork, state.allSelectedAccounts, text, language) : renderEmpty(text.noWorks)}
-        </div>
-      </section>
-    </div>
-  `;
+  return renderPlatformOverview(state, {
+    className: "douyin-overview",
+    toolbar: renderOverviewPeriodToolbar(text, overviewPeriod, {
+      title: text.douyinOverviewTitle,
+      periods: [1, 7, 30],
+    }),
+    overview,
+    emptyMetrics: emptyDouyinMetrics(),
+    metricMode: "plain",
+    latestWork,
+    renderLatestWork: (work) => renderDouyinLatestWork(work, state.allSelectedAccounts, text, language),
+  });
 }
 
 function renderBilibiliOverviewView(state: WorkspaceTabState) {
   const { text, language, accountContent, overviewPeriod } = state;
-  const toolbar = renderOverviewPeriodToolbar(text, overviewPeriod, {
-    title: text.bilibiliOverviewTitle,
-    periods: [1, 7, 30, 90, BILIBILI_TOTAL_PERIOD],
-  });
-
-  if (state.accountContentLoading && !accountContent) {
-    return `
-      <div class="xhs-overview bilibili-overview">
-        ${toolbar}
-        ${renderAccountContentLoading()}
-      </div>
-    `;
-  }
-
   const overview = overviewForPeriod(accountContent, overviewPeriod);
-  const syncError = accountContent?.error || overview?.error || "";
-  const metrics = overview?.metrics?.length ? overview.metrics : emptyBilibiliMetrics();
   const latestVideoWork = accountContent?.latestWork || null;
   const latestArticleWork = accountContent?.latestWorkSeven || null;
   const latestWork = state.selectedWorkType === "article" ? latestArticleWork : latestVideoWork;
-
-  return `
-    <div class="xhs-overview bilibili-overview">
-      ${toolbar}
-      ${syncError ? `<div class="sync-inline-error">${escapeHtml(syncError)}</div>` : ""}
-      ${renderBilibiliMetricGrid(metrics)}
-      ${overview?.summary ? `<p class="xhs-summary">${escapeHtml(overview.summary)}</p>` : ""}
-      <section class="content-block latest-work-block wechat-latest-work-block">
-        <div class="content-block-head latest-work-head">
-          <h3>${text.latestWork}</h3>
-          ${renderWorkTypeSegmented(text, state.selectedWorkType)}
-        </div>
-        <div class="content-list compact">
-          ${latestWork ? renderWechatLatestWork(latestWork, state.allSelectedAccounts, text, language) : renderEmpty(text.noWorks)}
-        </div>
-      </section>
-    </div>
-  `;
+  return renderPlatformOverview(state, {
+    className: "bilibili-overview",
+    toolbar: renderOverviewPeriodToolbar(text, overviewPeriod, {
+      title: text.bilibiliOverviewTitle,
+      periods: [1, 7, 30, 90, BILIBILI_TOTAL_PERIOD],
+    }),
+    overview,
+    emptyMetrics: emptyBilibiliMetrics(),
+    metricMode: "trend",
+    latestWork,
+    renderLatestWork: (work) => renderWechatLatestWork(work, state.allSelectedAccounts, text, language),
+    showWorkTypeToggle: true,
+  });
 }
 
 function renderKuaishouOverviewView(state: WorkspaceTabState) {
   const { text, accountContent, overviewPeriod, language } = state;
-  const toolbar = renderOverviewPeriodToolbar(text, overviewPeriod, {
-    title: text.kuaishouOverviewTitle,
-    periods: [7, 30, 90],
-  });
-
-  if (state.accountContentLoading && !accountContent) {
-    return `
-      <div class="xhs-overview kuaishou-overview">
-        ${toolbar}
-        ${renderAccountContentLoading()}
-      </div>
-    `;
-  }
-
   const overview = overviewForPeriod(accountContent, overviewPeriod);
-  const syncError = accountContent?.error || overview?.error || "";
-  const metrics = overview?.metrics?.length ? overview.metrics : emptyKuaishouMetrics();
   const latestWork = accountContent?.latestWork || null;
-
-  return `
-    <div class="xhs-overview kuaishou-overview">
-      ${toolbar}
-      ${syncError ? `<div class="sync-inline-error">${escapeHtml(syncError)}</div>` : ""}
-      ${renderBilibiliMetricGrid(metrics)}
-      ${overview?.summary ? `<p class="xhs-summary">${escapeHtml(overview.summary)}</p>` : ""}
-      <section class="content-block latest-work-block wechat-latest-work-block">
-        <div class="content-block-head latest-work-head">
-          <h3>${text.latestWork}</h3>
-          <span>${latestWork ? "1" : "0"}</span>
-        </div>
-        <div class="content-list compact">
-          ${latestWork ? renderWechatLatestWork(latestWork, state.allSelectedAccounts, text, language) : renderEmpty(text.noWorks)}
-        </div>
-      </section>
-    </div>
-  `;
+  return renderPlatformOverview(state, {
+    className: "kuaishou-overview",
+    toolbar: renderOverviewPeriodToolbar(text, overviewPeriod, {
+      title: text.kuaishouOverviewTitle,
+      periods: [7, 30, 90],
+    }),
+    overview,
+    emptyMetrics: emptyKuaishouMetrics(),
+    metricMode: "trend",
+    latestWork,
+    renderLatestWork: (work) => renderWechatLatestWork(work, state.allSelectedAccounts, text, language),
+  });
 }
 
 function renderOverviewPeriodToolbar(
@@ -585,13 +486,15 @@ function renderOverviewPeriodToolbar(
       <div class="xhs-overview-title">
         <strong>${escapeHtml(options.title)}</strong>
       </div>
-      <div class="segmented-control">
-        ${options.periods.map((period) => `
-          <button class="${overviewPeriod === period ? "active" : ""}" type="button" data-action="overview-period" data-period="${period}">
-            ${periodLabel(text, period)}
-          </button>
-        `).join("")}
-      </div>
+      ${options.periods.length ? `
+        <div class="segmented-control">
+          ${options.periods.map((period) => `
+            <button class="${overviewPeriod === period ? "active" : ""}" type="button" data-action="overview-period" data-period="${period}">
+              ${periodLabel(text, period)}
+            </button>
+          `).join("")}
+        </div>
+      ` : ""}
     </div>
   `;
 }
@@ -607,88 +510,44 @@ function periodLabel(text: CopyText, period: OverviewPeriod) {
 
 function renderWechatChannelsOverviewView(state: WorkspaceTabState) {
   const { text, accountContent, language } = state;
-  if (state.accountContentLoading && !accountContent) {
-    return `
-      <div class="xhs-overview">
-        ${renderWechatOverviewTitle(text)}
-        ${renderAccountContentLoading()}
-      </div>
-    `;
-  }
-
   const overview = accountContent?.overviewSeven || accountContent?.overviewThirty || null;
-  const syncError = accountContent?.error || overview?.error || "";
-  const metrics = overview?.metrics?.length ? overview.metrics : emptyWechatMetrics(text);
   const latestVideoWork = accountContent?.latestWork || null;
   const latestArticleWork = accountContent?.latestWorkSeven || null;
   const latestWork = state.selectedWorkType === "article" ? latestArticleWork : latestVideoWork;
+  return renderPlatformOverview(state, {
+    className: "wechat-overview",
+    toolbar: renderOverviewPeriodToolbar(text, state.overviewPeriod, {
+      title: text.wechatYesterdayOverview,
+      periods: [],
+    }),
+    overview,
+    emptyMetrics: emptyWechatMetrics(text),
+    metricMode: "plain",
+    latestWork,
+    renderLatestWork: (work) => renderWechatLatestWork(work, state.allSelectedAccounts, text, language),
+    showWorkTypeToggle: true,
+  });
+}
+
+function renderOverviewMetricGrid(metrics: DisplayOverviewMetric[], mode: OverviewMetricMode) {
+  const columns = adaptiveMetricColumns(metrics.length);
+  const tail = adaptiveMetricTail(metrics.length, columns);
   return `
-    <div class="xhs-overview wechat-overview">
-      ${renderWechatOverviewTitle(text)}
-      ${syncError ? `<div class="sync-inline-error">${escapeHtml(syncError)}</div>` : ""}
-      ${renderAdaptiveMetricGrid(metrics)}
-      ${overview?.summary ? `<p class="xhs-summary">${escapeHtml(overview.summary)}</p>` : ""}
-      <section class="content-block latest-work-block wechat-latest-work-block">
-        <div class="content-block-head latest-work-head">
-          <h3>${text.latestWork}</h3>
-          ${renderWorkTypeSegmented(text, state.selectedWorkType)}
-        </div>
-        <div class="content-list compact">
-          ${latestWork ? renderWechatLatestWork(latestWork, state.allSelectedAccounts, text, language) : renderEmpty(text.noWorks)}
-        </div>
-      </section>
+    <div class="xhs-metric-grid adaptive-metric-grid metric-cols-${columns} metric-tail-${tail}">
+      ${metrics.map((metric) => renderOverviewMetric(metric, mode)).join("")}
     </div>
   `;
 }
 
-function renderWechatOverviewTitle(text: CopyText) {
-  return `
-    <div class="xhs-overview-toolbar">
-      <div class="xhs-overview-title">
-        <strong>${text.wechatYesterdayOverview}</strong>
-      </div>
-    </div>
-  `;
-}
-
-function renderWechatMetric(metric: { label: string; value?: string | null }) {
+function renderOverviewMetric(metric: DisplayOverviewMetric, mode: OverviewMetricMode) {
   const value = metric.value && metric.value.trim() ? metric.value : "-";
+  const trend = metric.trend?.trim() || (mode === "comparison" ? "-" : "");
+  const trendPrefix = mode === "comparison" ? `${metric.compareLabel || "环比"} ` : "";
   return `
     <div class="xhs-metric-card">
       <span>${escapeHtml(metric.label)}</span>
       <strong>${escapeHtml(value)}</strong>
-    </div>
-  `;
-}
-
-function renderAdaptiveMetricGrid(metrics: Array<{ label: string; value?: string | null }>) {
-  const columns = adaptiveMetricColumns(metrics.length);
-  const tail = adaptiveMetricTail(metrics.length, columns);
-  return `
-    <div class="xhs-metric-grid adaptive-metric-grid metric-cols-${columns} metric-tail-${tail}">
-      ${metrics.map((metric) => renderWechatMetric(metric)).join("")}
-    </div>
-  `;
-}
-
-function renderBilibiliMetricGrid(metrics: Array<{ label: string; value?: string | null; trend?: string | null; tone?: string | null }>) {
-  const columns = adaptiveMetricColumns(metrics.length);
-  const tail = adaptiveMetricTail(metrics.length, columns);
-  return `
-    <div class="xhs-metric-grid adaptive-metric-grid metric-cols-${columns} metric-tail-${tail}">
-      ${metrics.map((metric) => renderBilibiliMetric(metric)).join("")}
-    </div>
-  `;
-}
-
-function renderBilibiliMetric(metric: { label: string; value?: string | null; trend?: string | null; tone?: string | null }) {
-  const value = metric.value && metric.value.trim() ? metric.value : "-";
-  const trend = metric.trend && metric.trend.trim() ? metric.trend : "";
-  return `
-    <div class="xhs-metric-card bilibili-metric-card">
-      <span>${escapeHtml(metric.label)}</span>
-      <strong>${escapeHtml(value)}</strong>
-      ${trend ? `<em class="${metric.tone === "up" ? "up" : metric.tone === "down" ? "down" : ""}">${escapeHtml(trend)}</em>` : ""}
+      ${trend ? `<em class="${metric.tone === "up" ? "up" : metric.tone === "down" ? "down" : ""}">${escapeHtml(trendPrefix + trend)}</em>` : ""}
     </div>
   `;
 }
@@ -732,9 +591,46 @@ function overviewForPeriod(accountContent: ChannelAccountContent | null, period:
   return accountContent.overviewSeven || null;
 }
 
-function renderXhsLatestWork(work: ChannelWork, accounts: ChannelAccount[], text: CopyText, language: LanguageMode) {
+function renderLatestWorkCard(
+  work: ChannelWork,
+  accounts: ChannelAccount[],
+  text: CopyText,
+  language: LanguageMode,
+  metrics: Array<{ label: string; value?: string | null }>,
+  metricClass = "",
+) {
   const account = accounts.find((item) => item.id === work.accountId);
   const publishedAt = work.publishedAt ? formatDate(work.publishedAt, language) : text.notSynced;
+  const coverUrl = normalizeDisplayImageUrl(work.coverUrl, work.platformId);
+  const coverFallback = normalizeChannelPlatformId(work.platformId) === "bilibili"
+    ? ` onerror="this.onerror=null;this.src='${escapeAttribute(BILIBILI_DEFAULT_COVER)}'"`
+    : "";
+  return `
+    <article class="latest-work-card">
+      <div class="latest-work-media">
+        ${coverUrl
+          ? `<img class="latest-work-cover" src="${escapeAttribute(coverUrl)}" alt="" loading="eager" decoding="sync" fetchpriority="high"${coverFallback} />`
+          : `<div class="latest-work-cover placeholder">${escapeHtml(work.title.slice(0, 1) || "N")}</div>`}
+      </div>
+      <div class="latest-work-main">
+        <div class="latest-work-title-row">
+          <h3>${escapeHtml(work.title)}</h3>
+          <span>${escapeHtml(account?.nickname || text.allAccounts)} · ${publishedAt}</span>
+        </div>
+        <div class="latest-work-metrics${metricClass ? ` ${metricClass}` : ""}">
+          ${metrics.map((metric) => `
+            <span>
+              <em>${escapeHtml(metric.label)}</em>
+              <strong>${escapeHtml(metric.value?.trim() || "-")}</strong>
+            </span>
+          `).join("")}
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+function renderXhsLatestWork(work: ChannelWork, accounts: ChannelAccount[], text: CopyText, language: LanguageMode) {
   const labels = latestWorkMetricLabels(language);
   const metrics = [
     { label: labels.impressions, value: formatOptionalContentNumber(work.impressions, language) },
@@ -748,72 +644,15 @@ function renderXhsLatestWork(work: ChannelWork, accounts: ChannelAccount[], text
     { label: labels.shares, value: formatOptionalContentNumber(work.shares, language) },
   ];
 
-  return `
-    <article class="latest-work-card">
-      <div class="latest-work-media">
-        ${
-          work.coverUrl
-            ? `<img class="latest-work-cover" src="${escapeAttribute(work.coverUrl)}" alt="" loading="eager" decoding="sync" fetchpriority="high" />`
-            : `<div class="latest-work-cover placeholder">${escapeHtml(work.title.slice(0, 1) || "N")}</div>`
-        }
-      </div>
-      <div class="latest-work-main">
-        <div class="latest-work-title-row">
-          <h3>${escapeHtml(work.title)}</h3>
-          <span>${escapeHtml(account?.nickname || text.allAccounts)} · ${publishedAt}</span>
-        </div>
-        <div class="latest-work-metrics">
-          ${metrics.map((metric) => `
-            <span>
-              <em>${escapeHtml(metric.label)}</em>
-              <strong>${escapeHtml(metric.value)}</strong>
-            </span>
-          `).join("")}
-        </div>
-      </div>
-    </article>
-  `;
+  return renderLatestWorkCard(work, accounts, text, language, metrics);
 }
 
 function renderWechatLatestWork(work: ChannelWork, accounts: ChannelAccount[], text: CopyText, language: LanguageMode) {
-  const account = accounts.find((item) => item.id === work.accountId);
-  const publishedAt = work.publishedAt ? formatDate(work.publishedAt, language) : text.notSynced;
   const metrics = work.metrics?.length ? work.metrics : defaultWorkMetrics(work, text, language);
-  const coverUrl = normalizeDisplayImageUrl(work.coverUrl, work.platformId);
-  const coverFallback = work.platformId === "bilibili"
-    ? ` onerror="this.onerror=null;this.src='${escapeAttribute(BILIBILI_DEFAULT_COVER)}'"`
-    : "";
-
-  return `
-    <article class="latest-work-card wechat-latest-work-card">
-      <div class="latest-work-media">
-        ${
-          coverUrl
-            ? `<img class="latest-work-cover" src="${escapeAttribute(coverUrl)}" alt="" loading="eager" decoding="sync" fetchpriority="high"${coverFallback} />`
-            : `<div class="latest-work-cover placeholder">${escapeHtml(work.title.slice(0, 1) || "W")}</div>`
-        }
-      </div>
-      <div class="latest-work-main">
-        <div class="latest-work-title-row">
-          <h3>${escapeHtml(work.title)}</h3>
-          <span>${escapeHtml(account?.nickname || text.allAccounts)} · ${publishedAt}</span>
-        </div>
-        <div class="latest-work-metrics wechat-latest-metrics">
-          ${metrics.map((metric) => `
-            <span>
-              <em>${escapeHtml(metric.label)}</em>
-              <strong>${escapeHtml(metric.value && metric.value.trim() ? metric.value : "-")}</strong>
-            </span>
-          `).join("")}
-        </div>
-      </div>
-    </article>
-  `;
+  return renderLatestWorkCard(work, accounts, text, language, metrics);
 }
 
 function renderDouyinLatestWork(work: ChannelWork, accounts: ChannelAccount[], text: CopyText, language: LanguageMode) {
-  const account = accounts.find((item) => item.id === work.accountId);
-  const publishedAt = work.publishedAt ? formatDate(work.publishedAt, language) : text.notSynced;
   const metrics = work.metrics?.length ? work.metrics : [
     { label: "播放量", value: formatOptionalContentNumber(work.views, language) },
     { label: "点赞量", value: formatOptionalContentNumber(work.likes, language) },
@@ -823,31 +662,7 @@ function renderDouyinLatestWork(work: ChannelWork, accounts: ChannelAccount[], t
     { label: "封面点击率", value: work.coverClickRate || "-" },
   ];
 
-  return `
-    <article class="latest-work-card douyin-latest-work-card">
-      <div class="latest-work-media">
-        ${
-          work.coverUrl
-            ? `<img class="latest-work-cover" src="${escapeAttribute(work.coverUrl)}" alt="" loading="eager" decoding="sync" fetchpriority="high" />`
-            : `<div class="latest-work-cover placeholder">${escapeHtml(work.title.slice(0, 1) || "D")}</div>`
-        }
-      </div>
-      <div class="latest-work-main">
-        <div class="latest-work-title-row">
-          <h3>${escapeHtml(work.title)}</h3>
-          <span>${escapeHtml(account?.nickname || text.allAccounts)} · ${publishedAt}</span>
-        </div>
-        <div class="latest-work-metrics douyin-latest-metrics">
-          ${metrics.map((metric) => `
-            <span>
-              <em>${escapeHtml(metric.label)}</em>
-              <strong>${escapeHtml(metric.value && metric.value.trim() ? metric.value : "-")}</strong>
-            </span>
-          `).join("")}
-        </div>
-      </div>
-    </article>
-  `;
+  return renderLatestWorkCard(work, accounts, text, language, metrics, "douyin-latest-metrics");
 }
 
 function latestWorkMetricLabels(language: LanguageMode) {
@@ -876,20 +691,6 @@ function latestWorkMetricLabels(language: LanguageMode) {
       };
 }
 
-function renderXhsMetric(metric: { label: string; value?: string | null; compareLabel?: string | null; trend?: string | null; tone?: string | null }) {
-  const value = metric.value && metric.value.trim() ? metric.value : "-";
-  const trend = metric.trend && metric.trend.trim() ? metric.trend : "-";
-  return `
-    <div class="xhs-metric-card">
-      <span>${escapeHtml(metric.label)}</span>
-      <strong>${escapeHtml(value)}</strong>
-      <em class="${metric.tone === "up" ? "up" : metric.tone === "down" ? "down" : ""}">
-        ${escapeHtml(metric.compareLabel || "环比")} ${escapeHtml(trend)}
-      </em>
-    </div>
-  `;
-}
-
 function emptyXhsMetrics() {
   return [
     "曝光数",
@@ -909,8 +710,8 @@ function emptyXhsMetrics() {
 
 function renderWorksView(state: WorkspaceTabState) {
   const { text, language, works, allSelectedAccounts, worksPages, worksLoading, selectedPlatform, selectedAccount } = state;
-  const isPagedAccountWorks = ["xiaohongshu", "wechat-channels", "douyin", "bilibili", "kuaishou"].includes(selectedPlatform.id) && Boolean(selectedAccount);
-  const workTypeTabs = ["wechat-channels", "bilibili"].includes(selectedPlatform.id) && selectedAccount
+  const isPagedAccountWorks = supportsWorksPages(selectedPlatform.id) && Boolean(selectedAccount);
+  const workTypeTabs = supportsTypedWorks(selectedPlatform.id) && selectedAccount
     ? renderWorkTypeTabs(text, state.selectedWorkType)
     : "";
   if (isPagedAccountWorks && worksLoading && !works.length) {
@@ -939,7 +740,7 @@ function renderWorksView(state: WorkspaceTabState) {
   `;
 }
 
-function renderWorkTypeTabs(text: CopyText, selectedWorkType: "video" | "article") {
+function renderWorkTypeTabs(text: CopyText, selectedWorkType: ChannelWorkType) {
   return `
     <div class="works-toolbar">
       ${renderWorkTypeSegmented(text, selectedWorkType)}
@@ -947,8 +748,8 @@ function renderWorkTypeTabs(text: CopyText, selectedWorkType: "video" | "article
   `;
 }
 
-function renderWorkTypeSegmented(text: CopyText, selectedWorkType: "video" | "article") {
-  const items: Array<{ id: "video" | "article"; label: string }> = [
+function renderWorkTypeSegmented(text: CopyText, selectedWorkType: ChannelWorkType) {
+  const items: Array<{ id: ChannelWorkType; label: string }> = [
     { id: "video", label: text.videoWorks },
     { id: "article", label: text.articleWorks },
   ];
@@ -959,41 +760,6 @@ function renderWorkTypeSegmented(text: CopyText, selectedWorkType: "video" | "ar
           ${item.label}
         </button>
       `).join("")}
-    </div>
-  `;
-}
-
-function renderCommentsView({ text, language, comments, allSelectedAccounts }: WorkspaceTabState) {
-  return `
-    <div class="content-list">
-      ${comments.length ? comments.map((comment) => renderCommentRow(comment, allSelectedAccounts, text, language)).join("") : renderEmpty(text.noComments)}
-    </div>
-  `;
-}
-
-function renderDataView({
-  text,
-  language,
-  selectedPlatform,
-  selectedAccounts,
-  works,
-  comments,
-  totalViews,
-  totalLikes,
-  pendingComments,
-  formatFollowersTotal,
-}: WorkspaceTabState) {
-  return `
-    <div class="metric-grid">
-      ${renderMetric(text.totalFans, formatFollowersTotal(selectedAccounts))}
-      ${renderMetric(text.totalViews, formatNumber(totalViews, language))}
-      ${renderMetric(text.totalLikes, formatNumber(totalLikes, language))}
-      ${renderMetric(text.contentComments, formatNumber(comments.length, language))}
-      ${renderMetric(text.pendingComments, formatNumber(pendingComments, language))}
-      ${renderMetric(text.contentWorks, formatNumber(works.length, language))}
-    </div>
-    <div class="account-data-list">
-      ${selectedAccounts.length ? selectedAccounts.map((account) => renderAccountDataRow(account, selectedPlatform, text, language)).join("") : renderEmpty(text.noAccountDesc)}
     </div>
   `;
 }
@@ -1010,11 +776,11 @@ function renderMetric(label: string, value: string) {
 function renderWorkRow(work: ChannelWork, accounts: ChannelAccount[], text: CopyText, language: LanguageMode) {
   const account = accounts.find((item) => item.id === work.accountId);
   const publishedAt = work.publishedAt ? formatDate(work.publishedAt, language) : text.notSynced;
-  const isCompactWork = ["xiaohongshu", "wechat-channels", "douyin", "bilibili", "kuaishou"].includes(work.platformId);
+  const isCompactWork = supportsWorksPages(work.platformId);
   const workMeta = isCompactWork ? publishedAt : `${account?.nickname || text.allAccounts} · ${publishedAt}`;
   const title = truncateWorkTitle(work.title);
   const coverUrl = normalizeDisplayImageUrl(work.coverUrl, work.platformId);
-  const coverFallback = work.platformId === "bilibili"
+  const coverFallback = normalizeChannelPlatformId(work.platformId) === "bilibili"
     ? ` onerror="this.onerror=null;this.src='${escapeAttribute(BILIBILI_DEFAULT_COVER)}'"`
     : "";
   const metrics = work.metrics?.length
@@ -1047,10 +813,11 @@ function renderWorkRow(work: ChannelWork, accounts: ChannelAccount[], text: Copy
 
 function normalizeDisplayImageUrl(value?: string | null, platformId?: string | null) {
   const url = value?.trim();
-  if (!url && platformId === "bilibili") return BILIBILI_DEFAULT_COVER;
+  const normalizedPlatformId = normalizeChannelPlatformId(platformId || "");
+  if (!url && normalizedPlatformId === "bilibili") return BILIBILI_DEFAULT_COVER;
   if (!url) return "";
   if (url.startsWith("//")) return `https:${url}`;
-  if (platformId === "bilibili") {
+  if (normalizedPlatformId === "bilibili") {
     const normalized = url.startsWith("http://i") && url.includes(".hdslb.com/")
       ? url.replace(/^http:\/\//, "https://")
       : url;
@@ -1107,8 +874,9 @@ function truncateWorkTitle(title: string) {
 }
 
 function defaultWorkMetrics(work: ChannelWork, text: CopyText, language: LanguageMode) {
-  const isDouyin = work.platformId === "douyin";
-  const isXhs = work.platformId === "xiaohongshu";
+  const platformId = normalizeChannelPlatformId(work.platformId);
+  const isDouyin = platformId === "douyin";
+  const isXhs = platformId === "xiaohongshu";
   const viewLabel = isDouyin
     ? (language === "zh" ? "播放" : "Plays")
     : isXhs
@@ -1119,22 +887,6 @@ function defaultWorkMetrics(work: ChannelWork, text: CopyText, language: Languag
     { label: text.totalLikes, value: formatOptionalContentNumber(work.likes, language) },
     { label: text.contentComments, value: formatOptionalContentNumber(work.comments, language) },
   ];
-}
-
-function renderCommentRow(comment: ChannelComment, accounts: ChannelAccount[], text: CopyText, language: LanguageMode) {
-  const account = accounts.find((item) => item.id === comment.accountId);
-  return `
-    <article class="content-row comment-row">
-      <div class="content-row-main">
-        <div class="content-row-title">
-          <h3>${escapeHtml(comment.author)}</h3>
-          <span class="content-status status-${comment.status}">${commentStatusLabel(comment.status, text)}</span>
-        </div>
-        <p>${escapeHtml(comment.content)}</p>
-        <em>${escapeHtml(account?.nickname || text.allAccounts)} · ${formatDate(comment.createdAt, language)} · ${sentimentLabel(comment.sentiment, text)}</em>
-      </div>
-    </article>
-  `;
 }
 
 function renderPlatformAccountRow(
@@ -1167,31 +919,6 @@ function renderPlatformAccountRow(
   `;
 }
 
-function renderAccountDataRow(
-  account: ChannelAccount,
-  platform: PlatformInfo,
-  text: CopyText,
-  language: LanguageMode,
-) {
-  return `
-    <article class="account-data-row">
-      <div class="account-data-main">
-        ${renderAccountAvatar(account, undefined, escapeHtml(account.nickname.slice(0, 1)), "account-nav-avatar")}
-        <div>
-          <strong>${escapeHtml(account.nickname)}</strong>
-          ${renderPlatformAccountMeta(platform, account, text, language)}
-        </div>
-      </div>
-      <div class="account-data-metrics">
-        <span>${formatFollowers(account.followers, language)}</span>
-        <span>${formatOptionalMetric(account.following, text.followingPending, text.followingLabel, language)}</span>
-        <span>${formatOptionalMetric(account.likes, text.likesPending, text.likesLabel, language)}</span>
-        <span>${accountSyncText(account, text, language)}</span>
-      </div>
-    </article>
-  `;
-}
-
 function renderEmpty(message: string) {
   return `<div class="content-empty">${message}</div>`;
 }
@@ -1208,18 +935,6 @@ function workStatusLabel(status: ChannelWork["status"], text: CopyText) {
   if (status === "published") return text.workStatusPublished;
   if (status === "reviewing") return text.workStatusReviewing;
   return text.workStatusDraft;
-}
-
-function commentStatusLabel(status: ChannelComment["status"], text: CopyText) {
-  if (status === "unread") return text.commentStatusUnread;
-  if (status === "replied") return text.commentStatusReplied;
-  return text.commentStatusRisk;
-}
-
-function sentimentLabel(sentiment: ChannelComment["sentiment"], text: CopyText) {
-  if (sentiment === "positive") return text.sentimentPositive;
-  if (sentiment === "risk") return text.sentimentRisk;
-  return text.sentimentNeutral;
 }
 
 function formatOptionalMetric(

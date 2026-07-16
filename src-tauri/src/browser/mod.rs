@@ -5,11 +5,9 @@ mod system_browser;
 
 use cdp::{
     browser_debug_port_closed,
-    browser_page_url,
     browser_websocket_url,
     page_websocket_url,
     wait_for_page_websocket,
-    wait_for_target_page_websocket,
     DevtoolsClient,
 };
 use system_browser::{allocate_local_port, find_chromium_browser};
@@ -107,6 +105,12 @@ pub(crate) fn open_managed_browser_login_session(
         remote_debugging_port,
         login_url
     );
+    if let Err(error) = ensure_managed_browser_login_page(remote_debugging_port, login_url) {
+        eprintln!(
+            "[managed-auth:{}] login page target ensure failed: {error}",
+            platform.id
+        );
+    }
 
     let managed_browser_session = ManagedBrowserAuthSession {
         session_id: session_id.clone(),
@@ -129,6 +133,23 @@ pub(crate) fn open_managed_browser_login_session(
     })
 }
 
+fn ensure_managed_browser_login_page(port: u16, login_url: &str) -> Result<(), String> {
+    if wait_for_page_websocket(port, login_url).is_ok() {
+        return Ok(());
+    }
+    let websocket_url = browser_websocket_url(port)?;
+    let mut client = DevtoolsClient::connect(&websocket_url)?;
+    client.call(
+        "Target.createTarget",
+        serde_json::json!({
+            "url": login_url,
+            "newWindow": true,
+        }),
+    )?;
+    let _ = wait_for_page_websocket(port, login_url)?;
+    Ok(())
+}
+
 pub(crate) fn managed_browser_cookie_snapshot(
     session: &ManagedBrowserAuthSession,
 ) -> Result<Option<ManagedBrowserCookieSnapshot>, String> {
@@ -144,7 +165,24 @@ pub(crate) fn managed_browser_cookie_snapshot(
     };
     let mut client = DevtoolsClient::connect(&websocket_url)?;
     client.call("Network.enable", serde_json::json!({}))?;
-    let page_url = browser_page_url(&mut client).unwrap_or_default();
+    let page_url = client
+        .call(
+            "Runtime.evaluate",
+            serde_json::json!({
+                "expression": "location.href",
+                "returnByValue": true,
+            }),
+        )
+        .ok()
+        .and_then(|value| {
+            value
+                .get("result")
+                .and_then(|result| result.get("result"))
+                .and_then(|result| result.get("value"))
+                .and_then(Value::as_str)
+                .map(ToString::to_string)
+        })
+        .unwrap_or_default();
     let value = client.call(
         "Network.getCookies",
         serde_json::json!({ "urls": platform.cookie_urls }),
@@ -209,456 +247,6 @@ pub(crate) fn managed_browser_cookie_snapshot(
         login_cookie,
         page_url,
     }))
-}
-
-pub(crate) fn managed_browser_navigate(session: &ManagedBrowserAuthSession, url: &str) -> Result<(), String> {
-    let websocket_url = page_websocket_url(session.remote_debugging_port, &session.login_url)?;
-    let mut client = DevtoolsClient::connect(&websocket_url)?;
-    client.call("Page.navigate", serde_json::json!({ "url": url }))?;
-    let _ = client.call("Page.bringToFront", serde_json::json!({}));
-    Ok(())
-}
-
-pub(crate) fn managed_browser_fetch_kuaishou_home_info(
-    session: &ManagedBrowserAuthSession,
-) -> Result<Value, String> {
-    let api_url = serde_json::to_string(platforms::kuaishou_home_info_api_url())
-        .map_err(|error| format!("快手创作者中心接口地址序列化失败: {error}"))?;
-    let script = r#"
-        (async () => {
-          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-          function getWebpackRequire() {
-            if (!window.webpackChunkks_fe_creator_platform) {
-              return null;
-            }
-            let req = null;
-            window.webpackChunkks_fe_creator_platform.push([[Date.now()], {}, function (r) { req = r; }]);
-            return req;
-          }
-          async function getKuaishouClient() {
-            for (let index = 0; index < 80; index += 1) {
-              const req = getWebpackRequire();
-              if (req) {
-                try {
-                  const module = req(37282);
-                  const client = module && (module.K || module.A || module.default);
-                  if (client && typeof client.post === 'function') {
-                    return { client, source: 'module:37282' };
-                  }
-                } catch (error) {
-                  // The module id is build-specific. Fall back to scanning loaded modules below.
-                }
-                const cache = req.c || {};
-                for (const key of Object.keys(cache)) {
-                  const exports = cache[key] && cache[key].exports;
-                  const client = exports && (exports.K || exports.A || exports.default);
-                  if (client && typeof client.post === 'function') {
-                    return { client, source: `cache:${key}` };
-                  }
-                }
-              }
-              await sleep(250);
-            }
-            return null;
-          }
-          try {
-            const api = __KUAISHOU_HOME_INFO_API__;
-            const signedClient = await getKuaishouClient();
-            if (signedClient) {
-              const response = await signedClient.client.post(api, {}, {
-                universalErrorHandler: false,
-                universalLoading: false
-              });
-              let userInfo = null;
-              try {
-                const req = getWebpackRequire();
-                if (req) {
-                  const userModule = req(68135);
-                  if (userModule && typeof userModule.ug === 'function') {
-                    userInfo = await userModule.ug();
-                  }
-                }
-              } catch (error) {
-                userInfo = { fetchError: String(error) };
-              }
-              const homeData = response && Object.prototype.hasOwnProperty.call(response, 'data')
-                ? response.data
-                : response;
-              return {
-                ok: true,
-                status: response && response.status ? response.status : 200,
-                source: signedClient.source,
-                url: location.href,
-                data: Object.assign({}, homeData || {}, { userInfo })
-              };
-            }
-            const response = await fetch(api, {
-              method: 'POST',
-              credentials: 'include',
-              headers: {
-                'Accept': 'application/json, text/plain, */*',
-                'Content-Type': 'application/json;charset=utf-8'
-              },
-              body: '{}'
-            });
-            const text = await response.text();
-            const data = JSON.parse(text);
-            return {
-              ok: response.ok,
-              status: response.status,
-              source: 'fetch',
-              url: location.href,
-              data
-            };
-          } catch (error) {
-            return { ok: false, status: 0, url: location.href, error: String(error) };
-          }
-        })()
-    "#
-    .replace("__KUAISHOU_HOME_INFO_API__", &api_url);
-    let wrapped = managed_browser_eval_json(session, &script)?;
-    let status = first_i64(&wrapped, &["status"]).unwrap_or(0);
-    let ok = wrapped
-        .get("ok")
-        .and_then(Value::as_bool)
-        .unwrap_or(status >= 200 && status < 300);
-    let url = wrapped.get("url").and_then(Value::as_str).unwrap_or_default();
-    let source = wrapped.get("source").and_then(Value::as_str).unwrap_or_default();
-    let result_code = wrapped
-        .get("data")
-        .and_then(|data| first_i64(data, &["result", "code", "errCode", "errcode"]));
-    eprintln!(
-        "[managed-auth:kuaishou] browser fetch source={source} status={status} result={:?} url={}",
-        result_code,
-        sanitize_sensitive_url_for_log(url)
-    );
-    if !ok {
-        return Err("请先在打开的快手创作者中心完成登录。".to_string());
-    }
-    wrapped
-        .get("data")
-        .cloned()
-        .ok_or_else(|| "快手浏览器状态缺少账号资料".to_string())
-}
-
-pub(crate) fn managed_browser_fetch_kuaishou_api(
-    session: &ManagedBrowserAuthSession,
-    api_url: &str,
-    body: Value,
-) -> Result<Value, String> {
-    let script = kuaishou_client_post_script(api_url, body)?;
-    let wrapped = managed_browser_eval_json(session, &script)?;
-    let status = first_i64(&wrapped, &["status"]).unwrap_or(0);
-    let ok = wrapped
-        .get("ok")
-        .and_then(Value::as_bool)
-        .unwrap_or(status >= 200 && status < 300);
-    let url = wrapped.get("url").and_then(Value::as_str).unwrap_or_default();
-    let source = wrapped.get("source").and_then(Value::as_str).unwrap_or_default();
-    let result_code = wrapped
-        .get("data")
-        .and_then(|data| first_i64(data, &["result", "code", "errCode", "errcode"]));
-    eprintln!(
-        "[managed-api:kuaishou] browser fetch source={source} status={status} result={:?} url={}",
-        result_code,
-        sanitize_sensitive_url_for_log(url)
-    );
-    if ok {
-        wrapped
-            .get("data")
-            .cloned()
-            .ok_or_else(|| "快手页面客户端请求缺少数据".to_string())
-    } else {
-        let message = wrapped
-            .get("error")
-            .and_then(Value::as_str)
-            .or_else(|| wrapped.get("message").and_then(Value::as_str))
-            .unwrap_or("快手页面客户端请求失败");
-        Err(message.to_string())
-    }
-}
-
-pub(crate) fn managed_browser_fetch_kuaishou_api_with_cookie_headless(
-    login_cookie: &str,
-    page_url: &str,
-    api_url: &str,
-    body: Value,
-) -> Result<Value, String> {
-    let platform = platforms::platform("kuaishou").ok_or_else(|| "当前平台暂不支持".to_string())?;
-    let browser_path = find_chromium_browser()
-        .ok_or_else(|| "未找到 Chrome、Edge 或 Chromium，无法使用浏览器模式同步快手数据。".to_string())?;
-    let user_data_dir = std::env::temp_dir().join(format!("market-tool-ks-sync-{}", Uuid::new_v4()));
-    fs::create_dir_all(&user_data_dir).map_err(|error| format!("创建快手临时浏览器目录失败: {error}"))?;
-
-    let remote_debugging_port = allocate_local_port()?;
-    let mut command = Command::new(&browser_path);
-    command
-        .arg(format!("--user-data-dir={}", user_data_dir.display()))
-        .arg(format!("--remote-debugging-port={remote_debugging_port}"))
-        .arg("--headless=new")
-        .arg("--disable-gpu")
-        .arg("--no-first-run")
-        .arg("--no-default-browser-check")
-        .arg("--disable-features=Translate")
-        .arg("--window-size=1280,900")
-        .arg("about:blank");
-    suppress_command_window(&mut command);
-    let child = command
-        .spawn()
-        .map_err(|error| format!("启动快手后台数据同步失败: {error}"))?;
-    let session = ManagedBrowserAuthSession {
-        session_id: format!("managed-api-kuaishou-cookie-{}", task_suffix(&Uuid::new_v4().to_string())),
-        profile_id: String::new(),
-        platform_id: platform.id.to_string(),
-        login_url: page_url.to_string(),
-        remote_debugging_port,
-        process_id: child.id(),
-    };
-
-    let result = (|| {
-        let websocket_url = wait_for_page_websocket(remote_debugging_port, "about:blank")?;
-        let mut client = DevtoolsClient::connect(&websocket_url)?;
-        client.call("Network.enable", serde_json::json!({}))?;
-        client.call("Page.enable", serde_json::json!({}))?;
-        let cookies = login_cookie_to_cdp_cookies(platform.id, login_cookie)?;
-        let (written, failed) = set_cdp_cookies(&mut client, &cookies);
-        eprintln!(
-            "[managed-api:kuaishou] temp cookie_write written={} failed={}",
-            written, failed
-        );
-        if !cookies.is_empty() && written == 0 {
-            return Err("快手登录 Cookie 写入后台浏览器失败".to_string());
-        }
-        client.call("Page.navigate", serde_json::json!({ "url": page_url }))?;
-        wait_for_target_page_websocket(remote_debugging_port, page_url)?;
-        std::thread::sleep(Duration::from_millis(1_500));
-        managed_browser_fetch_kuaishou_api(&session, api_url, body)
-    })();
-    close_managed_browser_auth_session(&session);
-    let _ = fs::remove_dir_all(&user_data_dir);
-    result
-}
-
-fn kuaishou_client_post_script(api_url: &str, body: Value) -> Result<String, String> {
-    let api_url = serde_json::to_string(api_url)
-        .map_err(|error| format!("快手接口地址序列化失败: {error}"))?;
-    let body = serde_json::to_string(&body)
-        .map_err(|error| format!("快手接口参数序列化失败: {error}"))?;
-    Ok(r#"
-        (async () => {
-          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-          function getWebpackRequire() {
-            if (!window.webpackChunkks_fe_creator_platform) {
-              return null;
-            }
-            let req = null;
-            window.webpackChunkks_fe_creator_platform.push([[Date.now()], {}, function (r) { req = r; }]);
-            return req;
-          }
-          async function getKuaishouClient() {
-            for (let index = 0; index < 100; index += 1) {
-              const req = getWebpackRequire();
-              if (req) {
-                try {
-                  const module = req(37282);
-                  const client = module && (module.K || module.A || module.default);
-                  if (client && typeof client.post === 'function') {
-                    return { client, source: 'module:37282' };
-                  }
-                } catch (error) {
-                  // Module ids can change between builds; scan the loaded cache below.
-                }
-                const cache = req.c || {};
-                for (const key of Object.keys(cache)) {
-                  const exports = cache[key] && cache[key].exports;
-                  const client = exports && (exports.K || exports.A || exports.default);
-                  if (client && typeof client.post === 'function') {
-                    return { client, source: `cache:${key}` };
-                  }
-                }
-              }
-              await sleep(250);
-            }
-            return null;
-          }
-          try {
-            const api = __KUAISHOU_API_URL__;
-            let signedApi = api;
-            try {
-              const parsed = new URL(api, location.href);
-              if (parsed.origin === location.origin) {
-                signedApi = `${parsed.pathname}${parsed.search}`;
-              }
-            } catch (error) {
-              // Keep the original URL when URL parsing is unavailable or unexpected.
-            }
-            const payload = __KUAISHOU_API_BODY__;
-            const signedClient = await getKuaishouClient();
-            if (signedClient) {
-              const response = await signedClient.client.post(signedApi, payload, {
-                universalErrorHandler: false,
-                universalLoading: false
-              });
-              return {
-                ok: true,
-                status: response && response.status ? response.status : 200,
-                source: signedClient.source,
-                url: location.href,
-                data: response && Object.prototype.hasOwnProperty.call(response, 'data') ? response.data : response
-              };
-            }
-            const response = await fetch(api, {
-              method: 'POST',
-              credentials: 'include',
-              headers: {
-                'Accept': 'application/json, text/plain, */*',
-                'Content-Type': 'application/json;charset=utf-8'
-              },
-              body: JSON.stringify(payload)
-            });
-            const text = await response.text();
-            return {
-              ok: response.ok,
-              status: response.status,
-              source: 'fetch',
-              url: location.href,
-              data: JSON.parse(text)
-            };
-          } catch (error) {
-            return { ok: false, status: 0, url: location.href, error: String(error) };
-          }
-        })()
-    "#
-    .replace("__KUAISHOU_API_URL__", &api_url)
-    .replace("__KUAISHOU_API_BODY__", &body))
-}
-
-pub(crate) fn managed_browser_fetch_kuaishou_home_info_headless(
-    app: &AppHandle,
-    profile_id: &str,
-) -> Result<(Value, Option<ManagedBrowserCookieSnapshot>), String> {
-    let platform = platforms::platform("kuaishou").ok_or_else(|| "当前平台暂不支持".to_string())?;
-    let browser_path = find_chromium_browser()
-        .ok_or_else(|| "未找到 Chrome、Edge 或 Chromium，无法使用浏览器模式同步快手账号。".to_string())?;
-    let user_data_dir = managed_browser_auth_profile_dir(app, platform, profile_id)?;
-    if !user_data_dir.exists() {
-        return Err("快手浏览器登录目录不存在，请重新登录。".to_string());
-    }
-
-    let remote_debugging_port = allocate_local_port()?;
-    let mut command = Command::new(&browser_path);
-    command
-        .arg(format!("--user-data-dir={}", user_data_dir.display()))
-        .arg(format!("--remote-debugging-port={remote_debugging_port}"))
-        .arg("--headless=new")
-        .arg("--disable-gpu")
-        .arg("--no-first-run")
-        .arg("--no-default-browser-check")
-        .arg("--disable-features=Translate")
-        .arg("--window-size=1280,900")
-        .arg(platform.creator_home_url);
-    suppress_command_window(&mut command);
-    let child = command
-        .spawn()
-        .map_err(|error| format!("启动快手后台资料同步失败: {error}"))?;
-    let session = ManagedBrowserAuthSession {
-        session_id: format!("managed-sync-kuaishou-{}", task_suffix(profile_id)),
-        profile_id: profile_id.to_string(),
-        platform_id: platform.id.to_string(),
-        login_url: platform.creator_home_url.to_string(),
-        remote_debugging_port,
-        process_id: child.id(),
-    };
-
-    let result = (|| {
-        wait_for_target_page_websocket(remote_debugging_port, platform.creator_home_url)?;
-        let value = managed_browser_fetch_kuaishou_home_info_with_retry(&session)?;
-        let snapshot = managed_browser_cookie_snapshot(&session).ok().flatten();
-        Ok((value, snapshot))
-    })();
-    close_managed_browser_auth_session(&session);
-    result
-}
-
-fn managed_browser_eval_json(session: &ManagedBrowserAuthSession, expression: &str) -> Result<Value, String> {
-    let websocket_url = page_websocket_url(session.remote_debugging_port, &session.login_url)?;
-    let mut client = DevtoolsClient::connect(&websocket_url)?;
-    let result = client.call(
-        "Runtime.evaluate",
-        serde_json::json!({
-            "expression": expression,
-            "awaitPromise": true,
-            "returnByValue": true,
-        }),
-    )?;
-    if let Some(exception) = result.get("exceptionDetails") {
-        return Err(format!("浏览器脚本执行失败: {exception}"));
-    }
-    result
-        .get("result")
-        .and_then(|value| value.get("value"))
-        .cloned()
-        .ok_or_else(|| "浏览器脚本没有返回结果".to_string())
-}
-
-pub(crate) fn managed_browser_fetch_kuaishou_home_info_with_retry(
-    session: &ManagedBrowserAuthSession,
-) -> Result<Value, String> {
-    let mut last_error = String::new();
-    for attempt in 0..4 {
-        if attempt > 0 {
-            std::thread::sleep(Duration::from_millis(1_200));
-        }
-        match managed_browser_fetch_kuaishou_home_info(session) {
-            Ok(value) => return Ok(value),
-            Err(error) if browser_page_eval_retryable(&error) => {
-                last_error = error;
-            }
-            Err(error) => return Err(error),
-        }
-    }
-    Err(last_error)
-}
-
-fn browser_page_eval_retryable(error: &str) -> bool {
-    error.contains("Execution context was destroyed")
-        || error.contains("Cannot find context with specified id")
-        || error.contains("Inspected target navigated or closed")
-        || error.contains("浏览器脚本没有返回结果")
-}
-
-fn sanitize_sensitive_url_for_log(raw: &str) -> String {
-    let Ok(mut url) = Url::parse(raw) else {
-        return raw.to_string();
-    };
-    let pairs = url
-        .query_pairs()
-        .map(|(key, value)| {
-            let sensitive = [
-                "authToken",
-                "token",
-                "access_token",
-                "refresh_token",
-                "passToken",
-                "captchaToken",
-            ]
-            .iter()
-            .any(|item| key.eq_ignore_ascii_case(item));
-            if sensitive {
-                (key.into_owned(), "***".to_string())
-            } else {
-                (key.into_owned(), value.into_owned())
-            }
-        })
-        .collect::<Vec<_>>();
-    url.set_query(None);
-    if !pairs.is_empty() {
-        let mut query = url.query_pairs_mut();
-        for (key, value) in pairs {
-            query.append_pair(&key, &value);
-        }
-    }
-    url.to_string()
 }
 
 pub(crate) fn close_managed_browser_auth_session(session: &ManagedBrowserAuthSession) {
@@ -727,6 +315,25 @@ pub(crate) fn open_creator_homepage_managed_browser(
 ) -> Result<(), String> {
     let platform_id = normalize_platform_id(&account.platform_id);
     let platform = platforms::platform(&platform_id).ok_or_else(|| "当前平台暂不支持".to_string())?;
+    open_creator_url_managed_browser(
+        app,
+        account,
+        saved_login_cookie,
+        saved_browser_profile_id,
+        platform.creator_home_url,
+    )
+}
+
+pub(crate) fn open_creator_url_managed_browser(
+    app: AppHandle,
+    account: ChannelAccount,
+    saved_login_cookie: Option<String>,
+    saved_browser_profile_id: Option<String>,
+    target_url: &str,
+) -> Result<(), String> {
+    let platform_id = normalize_platform_id(&account.platform_id);
+    let platform = platforms::platform(&platform_id).ok_or_else(|| "当前平台暂不支持".to_string())?;
+    let target_url = managed_browser_platform_url(platform, target_url)?;
     let browser_path = find_chromium_browser()
         .ok_or_else(|| "未找到 Chrome、Edge 或 Chromium，无法使用浏览器模式打开主页。".to_string())?;
     let profile_dir = saved_browser_profile_id
@@ -743,7 +350,7 @@ pub(crate) fn open_creator_homepage_managed_browser(
     let launch = ManagedBrowserLaunch {
         browser_path,
         user_data_dir,
-        url: platform.creator_home_url.to_string(),
+        url: target_url,
         platform_id,
         login_cookie: if profile_reused {
             None
@@ -760,6 +367,20 @@ pub(crate) fn open_creator_homepage_managed_browser(
     });
 
     Ok(())
+}
+
+fn managed_browser_platform_url(
+    platform: &platforms::ChannelPlatform,
+    target_url: &str,
+) -> Result<String, String> {
+    let url = Url::parse(target_url).map_err(|error| format!("创作者页面地址无效: {error}"))?;
+    let host = url
+        .host_str()
+        .ok_or_else(|| "创作者页面地址缺少域名".to_string())?;
+    if !platform.allows_cookie_domain(host) {
+        return Err(format!("目标页面不属于{}创作者平台。", platform.name));
+    }
+    Ok(url.to_string())
 }
 
 fn managed_browser_auth_profile_dir(

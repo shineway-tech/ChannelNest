@@ -1,0 +1,1 @@
+Plan a coherent social image series. Distill the source into concise cards, preserve factual meaning, and give each card one clear purpose. Keep explicit style, layout, palette, preset, and series choices unchanged. Return only the requested structured JSON with exactly the requested number of cards.

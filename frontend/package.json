@@ -1,6 +1,6 @@
 {
   "name": "channel-nest",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,8 +12,10 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.5.0",
+    "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "^2.10.1",
+    "flatpickr": "^4.6.13",
     "simple-icons": "^16.24.0"
   },
   "devDependencies": {

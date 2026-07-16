@@ -7,7 +7,12 @@ export interface AppShellState {
   theme: string;
   currentUser: AuthUser;
   activeMenuId: MenuId;
-  homeLabel: string;
+  accountManagementLabel: string;
+  publishLabel: string;
+  membershipLabel: string;
+  messagesLabel: string;
+  aiLabel: string;
+  unreadCount: number;
   userMenuOpen: boolean;
   mainContent: string;
   accountDropdown: string;
@@ -18,7 +23,12 @@ export function renderAppShell({
   theme,
   currentUser,
   activeMenuId,
-  homeLabel,
+  accountManagementLabel,
+  publishLabel,
+  membershipLabel,
+  messagesLabel,
+  aiLabel,
+  unreadCount,
   userMenuOpen,
   mainContent,
   accountDropdown,
@@ -31,8 +41,20 @@ export function renderAppShell({
           <div class="brand-mark" aria-hidden="true">M</div>
         </div>
         <nav class="rail-nav">
-          <button class="rail-btn ${activeMenuId === "channels" ? "active" : ""}" type="button" data-menu="channels" title="${escapeAttribute(homeLabel)}" aria-label="${escapeAttribute(homeLabel)}">
-            ${icon("home")}
+          <button class="rail-btn ${activeMenuId === "channels" ? "active" : ""}" type="button" data-menu="channels" title="${escapeAttribute(accountManagementLabel)}" aria-label="${escapeAttribute(accountManagementLabel)}">
+            ${icon("layers")}
+          </button>
+          <button class="rail-btn ${activeMenuId === "publish" ? "active" : ""}" type="button" data-menu="publish" title="${escapeAttribute(publishLabel)}" aria-label="${escapeAttribute(publishLabel)}">
+            ${icon("send")}
+          </button>
+          <button class="rail-btn ${activeMenuId === "ai" ? "active" : ""}" type="button" data-menu="ai" title="${escapeAttribute(aiLabel)}" aria-label="${escapeAttribute(aiLabel)}">
+            ${icon("spark")}
+          </button>
+          <button class="rail-btn ${activeMenuId === "membership" ? "active" : ""}" type="button" data-menu="membership" title="${escapeAttribute(membershipLabel)}" aria-label="${escapeAttribute(membershipLabel)}">
+            ${icon("crown")}
+          </button>
+          <button class="rail-btn ${activeMenuId === "messages" ? "active" : ""}" type="button" data-menu="messages" title="${escapeAttribute(messagesLabel)}" aria-label="${escapeAttribute(messagesLabel)}">
+            ${icon("message")}${unreadCount ? `<span class="rail-badge">${Math.min(unreadCount, 99)}</span>` : ""}
           </button>
         </nav>
         <div class="rail-bottom">
@@ -46,7 +68,7 @@ export function renderAppShell({
         </div>
       </aside>
 
-      <main class="main ${activeMenuId === "channels" ? "main-channels" : ""}">
+      <main class="main ${activeMenuId === "channels" ? "main-channels" : activeMenuId === "publish" ? "main-publish" : activeMenuId === "ai" ? "main-ai" : "main-commerce"}">
         ${mainContent}
       </main>
 

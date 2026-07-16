@@ -10,6 +10,7 @@ use crate::{
 pub(crate) struct PendingAuth {
     pub(crate) user_id: String,
     pub(crate) platform_id: String,
+    pub(crate) account_id: Option<String>,
     pub(crate) managed_browser_session: Option<ManagedBrowserAuthSession>,
     pub(crate) plugin_login_target: Option<String>,
     pub(crate) created_at: DateTime<Utc>,

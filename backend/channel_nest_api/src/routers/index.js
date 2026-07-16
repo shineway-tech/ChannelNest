@@ -11,6 +11,10 @@ const signWhiteList = [
   /^\/v1\/channel/,
   /^\/v1\/feedback/,
   /^\/v1\/desktop-updates/,
+  /^\/v1\/billing/,
+  /^\/v1\/entitlements/,
+  /^\/v1\/messages/,
+  /^\/v1\/ai/,
 ];
 
 router.use(checkSign(config.sign_token, signWhiteList));

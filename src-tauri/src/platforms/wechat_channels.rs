@@ -1,6 +1,9 @@
 use super::*;
+use base64::engine::general_purpose;
 use chrono::{FixedOffset, TimeZone};
 use serde_json::json;
+use std::{fs::File, io::Read, path::Path, time::Duration};
+use uuid::Uuid;
 
 const COOKIE_DOMAINS: &[DomainRule] = &[DomainRule {
     host: "channels.weixin.qq.com",
@@ -20,6 +23,17 @@ const STATISTIC_POST_TOTAL_API: &str =
     "https://channels.weixin.qq.com/cgi-bin/mmfinderassistant-bin/statistic/new_post_total_data";
 const POST_LIST_API: &str =
     "https://channels.weixin.qq.com/micro/content/cgi-bin/mmfinderassistant-bin/post/post_list";
+const POST_CREATE_API: &str =
+    "https://channels.weixin.qq.com/micro/content/cgi-bin/mmfinderassistant-bin/post/post_create";
+const HELPER_UPLOAD_PARAMS_API: &str =
+    "https://channels.weixin.qq.com/micro/content/cgi-bin/mmfinderassistant-bin/helper/helper_upload_params";
+const GET_FINDER_POST_TRACE_KEY_API: &str =
+    "https://channels.weixin.qq.com/micro/content/cgi-bin/mmfinderassistant-bin/post/get-finder-post-trace-key";
+const WX_PUBLISH_REFERER: &str = "https://channels.weixin.qq.com/platform/post/create";
+const WX_CDN_DEFAULT_HOST: &str = "finder.video.qq.com";
+const WX_CDN_REPLACE_HOST_PREFIX: &str = "http://wxapp.tc.qq.com";
+const WX_CDN_PUBLIC_HOST_PREFIX: &str = "https://finder.video.qq.com";
+const WX_CDN_UPLOAD_CHUNK_SIZE: u64 = 8 * 1024 * 1024;
 const WX_VIDEO_LIST_PAGE_URL: &str = "https://channels.weixin.qq.com/micro/content/post/list";
 const WX_VIDEO_LIST_PAGE_URL_PARAM: &str =
     "https:%2F%2Fchannels.weixin.qq.com%2Fmicro%2Fcontent%2Fpost%2Flist";
@@ -41,8 +55,17 @@ const STATISTIC_HEADERS: &[(&str, &str)] = &[
     ("Referer", "https://channels.weixin.qq.com/platform"),
     ("Content-Type", "application/json"),
 ];
+const WX_PUBLISH_HEADERS: &[(&str, &str)] = &[
+    ("Origin", "https://channels.weixin.qq.com"),
+    ("Referer", WX_PUBLISH_REFERER),
+    ("Content-Type", "application/json"),
+];
 
 const WX_INTERVAL_DAY: i64 = 3;
+const WX_POST_MEDIA_TYPE_IMAGE: i64 = 2;
+const WX_POST_MEDIA_TYPE_VIDEO: i64 = 4;
+const WX_CDN_FILE_TYPE_VIDEO: &str = "videoFileType";
+const WX_CDN_FILE_TYPE_PICTURE: &str = "pictureFileType";
 const WX_USERPAGE_TYPE_PHOTO: i64 = 10;
 const WX_USERPAGE_TYPE_VIDEO: i64 = 11;
 const WX_WORKS_TAB_PAGE_SIZE: i64 = 20;
@@ -100,6 +123,54 @@ struct WxPostListRequestConfig {
     page_url_param: &'static str,
     page_size: i64,
     sticky_order: bool,
+}
+
+#[derive(Debug, Clone)]
+struct WxUploadedPublishMedia {
+    url: String,
+    file_size: u64,
+    thumb_url: String,
+    media_type: i64,
+    width: i64,
+    height: i64,
+    duration_millis: Option<i64>,
+    md5sum: String,
+    cover_url: Option<String>,
+    card_show_style: Option<i64>,
+}
+
+#[derive(Debug, Clone)]
+struct WxUploadParams {
+    uin: String,
+    app_type: String,
+    auth_key: String,
+    video_file_type: String,
+    picture_file_type: String,
+    thumb_file_type: String,
+}
+
+#[derive(Debug, Clone)]
+struct WxMediaMeta {
+    name: String,
+    mime_type: String,
+    size: u64,
+    width: i64,
+    height: i64,
+    duration_millis: Option<i64>,
+}
+
+#[derive(Debug, Clone)]
+struct WxCdnUploadFile {
+    name: String,
+    mime_type: String,
+    bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone)]
+struct WxCdnUploadResult {
+    url: String,
+    file_size: u64,
+    file_uuid: String,
 }
 
 impl WxPostListSource {
@@ -277,6 +348,663 @@ pub(super) static SPEC: ChannelPlatform = ChannelPlatform {
     avatar_origin: None,
 };
 
+fn wx_publish_media_type(content_type: &str) -> Result<i64, String> {
+    match content_type.trim() {
+        "video" => Ok(WX_POST_MEDIA_TYPE_VIDEO),
+        "article" | "image" | "photo" => Ok(WX_POST_MEDIA_TYPE_IMAGE),
+        _ => Err("视频号当前仅支持视频或图文发布。".to_string()),
+    }
+}
+
+fn wx_post_create_request(
+    target: &PublishWorkTargetRequest,
+    content_type: &str,
+    uploaded: &[WxUploadedPublishMedia],
+    client_id: &str,
+    trace_key: &str,
+) -> Result<Value, String> {
+    if uploaded.is_empty() {
+        return Err("请先上传视频号作品素材。".to_string());
+    }
+    let media_type = wx_publish_media_type(content_type)?;
+    if uploaded.iter().any(|item| item.media_type != media_type) {
+        return Err("视频号作品素材类型和发布类型不一致。".to_string());
+    }
+    let title = target.title.trim();
+    let description = target.body.trim();
+    if title.is_empty() {
+        return Err("请输入视频号作品标题。".to_string());
+    }
+    if description.is_empty() {
+        return Err("请输入视频号作品正文。".to_string());
+    }
+    ensure_wx_publish_remote_constraints(target)?;
+
+    let media = uploaded
+        .iter()
+        .map(|item| {
+            let mut value = json!({
+                "url": item.url,
+                "fileSize": item.file_size,
+                "thumbUrl": item.thumb_url,
+                "fullThumbUrl": item.thumb_url,
+                "mediaType": item.media_type,
+                "width": item.width,
+                "height": item.height,
+                "md5sum": item.md5sum,
+            });
+            if let Some(duration) = item.duration_millis {
+                value["videoPlayLen"] = json!(duration);
+            }
+            if let Some(cover_url) = item.cover_url.as_deref().filter(|value| !value.trim().is_empty()) {
+                value["coverUrl"] = json!(cover_url);
+                value["fullCoverUrl"] = json!(cover_url);
+            }
+            if let Some(card_show_style) = item.card_show_style {
+                value["cardShowStyle"] = json!(card_show_style);
+            }
+            value
+        })
+        .collect::<Vec<_>>();
+
+    let mut object_desc = json!({
+        "mpTitle": title,
+        "description": description,
+        "extReading": {
+            "link": "",
+            "title": "",
+        },
+        "mediaType": media_type,
+        "location": {},
+        "topic": {
+            "finderTopicInfo": "",
+        },
+        "event": {},
+        "mentionedUser": [],
+        "media": media,
+    });
+    if media_type == WX_POST_MEDIA_TYPE_IMAGE {
+        object_desc["finderNewlifeDesc"] = json!({
+            "richTextTitle": title,
+            "richTextContent": description,
+        });
+    }
+
+    Ok(json!({
+        "post": {
+            "objectType": 0,
+            "longitude": 0,
+            "latitude": 0,
+            "feedLongitude": 0,
+            "feedLatitude": 0,
+            "originalFlag": 0,
+            "topics": [],
+            "isFullPost": 1,
+            "handleFlag": 2,
+            "videoClipTaskId": "",
+            "traceInfo": {
+                "traceKey": trace_key,
+            },
+            "objectDesc": object_desc,
+        },
+        "clientId": client_id,
+    }))
+}
+
+fn ensure_wx_public_visibility(target: &PublishWorkTargetRequest) -> Result<(), String> {
+    if target.visibility.trim() != "public" {
+        return Err("视频号当前仅支持公开发布。".to_string());
+    }
+    Ok(())
+}
+
+fn ensure_wx_publish_remote_constraints(target: &PublishWorkTargetRequest) -> Result<(), String> {
+    if target.schedule_mode.trim() == "scheduled" {
+        return Err("视频号定时发布链路还未接入，请先使用立即发布。".to_string());
+    }
+    ensure_wx_public_visibility(target)
+}
+
+pub(crate) async fn publish_wx_channels_work(
+    cookie_header: &str,
+    content_type: &str,
+    target: &PublishWorkTargetRequest,
+) -> Result<Option<String>, String> {
+    let media_type = wx_publish_media_type(content_type)?;
+    let publish_media = wx_publish_media_requests(target, content_type)?;
+    ensure_wx_publish_remote_constraints(target)?;
+    let (auth_value_result, upload_params_result, trace_key_result) = tokio::join!(
+        request_wx_auth_data(cookie_header),
+        request_wx_upload_params(cookie_header),
+        request_wx_post_trace_key(cookie_header),
+    );
+    let auth_value = auth_value_result?;
+    let cdn_host = parse_wx_cdn_host(&auth_value);
+    let upload_params = upload_params_result?;
+    let trace_key = trace_key_result?;
+
+    let uploaded =
+        upload_wx_publish_medias(cookie_header, &cdn_host, &upload_params, publish_media, media_type)
+            .await?;
+
+    let client_id = Uuid::new_v4().simple().to_string();
+    let payload = wx_post_create_request(target, content_type, &uploaded, &client_id, &trace_key)?;
+    let value = request_plugin_json_with_body(
+        "POST",
+        POST_CREATE_API,
+        cookie_header,
+        WX_PUBLISH_HEADERS,
+        Some(payload),
+    )
+    .await
+    .map_err(|error| format!("视频号发布失败: {error}"))?;
+    ensure_wx_success(&value, "视频号发布失败")?;
+    Ok(wx_publish_remote_id(&value))
+}
+
+async fn upload_wx_publish_medias(
+    cookie_header: &str,
+    cdn_host: &str,
+    upload_params: &WxUploadParams,
+    medias: &[PublishWorkMediaRequest],
+    media_type: i64,
+) -> Result<Vec<WxUploadedPublishMedia>, String> {
+    let cookie_header = cookie_header.to_string();
+    let cdn_host = cdn_host.to_string();
+    let upload_params = upload_params.clone();
+    upload_publish_media_in_order(
+        medias,
+        PublishUploadLabels {
+            platform: "视频号",
+            item: "个素材",
+            collection: "素材",
+        },
+        move |media| {
+            let cookie_header = cookie_header.clone();
+            let cdn_host = cdn_host.clone();
+            let upload_params = upload_params.clone();
+            async move {
+                upload_wx_publish_media(
+                    &cookie_header,
+                    &cdn_host,
+                    &upload_params,
+                    &media,
+                    media_type,
+                )
+                .await
+            }
+        },
+    )
+    .await
+}
+
+async fn request_wx_auth_data(cookie_header: &str) -> Result<Value, String> {
+    let value = request_plugin_json(
+        "POST",
+        AUTH_DATA_API,
+        cookie_header,
+        AUTH_DATA_HEADERS,
+    )
+    .await
+    .map_err(|error| format!("视频号账号资料读取失败: {error}"))?;
+    ensure_wx_success(&value, "视频号账号资料读取失败")?;
+    Ok(value)
+}
+
+async fn request_wx_upload_params(cookie_header: &str) -> Result<WxUploadParams, String> {
+    let value = request_plugin_json(
+        "POST",
+        HELPER_UPLOAD_PARAMS_API,
+        cookie_header,
+        WX_PUBLISH_HEADERS,
+    )
+    .await
+    .map_err(|error| format!("视频号上传授权获取失败: {error}"))?;
+    ensure_wx_success(&value, "视频号上传授权获取失败")?;
+    parse_wx_upload_params(&value)
+}
+
+async fn request_wx_post_trace_key(cookie_header: &str) -> Result<String, String> {
+    let value = request_plugin_json_with_body(
+        "POST",
+        GET_FINDER_POST_TRACE_KEY_API,
+        cookie_header,
+        WX_PUBLISH_HEADERS,
+        Some(json!({ "objectId": "" })),
+    )
+    .await
+    .map_err(|error| format!("视频号发布 TraceKey 获取失败: {error}"))?;
+    ensure_wx_success(&value, "视频号发布 TraceKey 获取失败")?;
+    let data = response_data(&value).unwrap_or(&value);
+    wx_text_or_number_deep(data, &["traceKey", "trace_key"])
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| "视频号发布 TraceKey 为空。".to_string())
+}
+
+async fn upload_wx_publish_media(
+    cookie_header: &str,
+    cdn_host: &str,
+    upload_params: &WxUploadParams,
+    media: &PublishWorkMediaRequest,
+    media_type: i64,
+) -> Result<WxUploadedPublishMedia, String> {
+    let meta = wx_media_meta(media, media_type)?;
+    let cdn_file_type = wx_cdn_file_type(media_type);
+    let uploaded = upload_wx_cdn_media_file(
+        cookie_header,
+        cdn_host,
+        upload_params,
+        cdn_file_type,
+        Path::new(media.path.trim()),
+        &meta,
+    )
+    .await?;
+
+    let mut thumb_url = uploaded.url.clone();
+    let mut cover_url = None;
+    if media_type == WX_POST_MEDIA_TYPE_VIDEO {
+        let cover_file = wx_cover_upload_file(media)?;
+        let uploaded_cover = upload_wx_cdn_file(
+            cookie_header,
+            cdn_host,
+            upload_params,
+            WX_CDN_FILE_TYPE_PICTURE,
+            cover_file,
+        )
+        .await?;
+        thumb_url = uploaded_cover.url.clone();
+        cover_url = Some(uploaded_cover.url);
+    }
+
+    Ok(WxUploadedPublishMedia {
+        url: uploaded.url,
+        file_size: uploaded.file_size,
+        thumb_url,
+        media_type,
+        width: meta.width,
+        height: meta.height,
+        duration_millis: meta.duration_millis,
+        md5sum: uploaded.file_uuid,
+        cover_url,
+        card_show_style: wx_card_show_style(media_type, meta.width, meta.height),
+    })
+}
+
+async fn upload_wx_cdn_media_file(
+    cookie_header: &str,
+    cdn_host: &str,
+    upload_params: &WxUploadParams,
+    cdn_file_type: &str,
+    path: &Path,
+    meta: &WxMediaMeta,
+) -> Result<WxCdnUploadResult, String> {
+    let file_uuid = Uuid::new_v4().simple().to_string();
+    let ranges = wx_cdn_upload_ranges(meta.size, WX_CDN_UPLOAD_CHUNK_SIZE);
+    let mut file = File::open(path).map_err(|error| format!("读取视频号素材失败: {error}"))?;
+    let mut uploaded_url = None;
+
+    for (start, end) in ranges {
+        let chunk_len = (end - start + 1) as usize;
+        let mut bytes = vec![0_u8; chunk_len];
+        file.read_exact(&mut bytes)
+            .map_err(|error| format!("读取视频号素材分片失败: {error}"))?;
+        let value = upload_wx_cdn_file_part(
+            cookie_header,
+            cdn_host,
+            upload_params,
+            cdn_file_type,
+            &meta.name,
+            &meta.mime_type,
+            &file_uuid,
+            meta.size,
+            start,
+            end,
+            bytes,
+        )
+        .await?;
+        if let Some(url) = parse_wx_cdn_upload_url(&value) {
+            uploaded_url = Some(url);
+        }
+    }
+
+    let url = uploaded_url
+        .ok_or_else(|| "视频号素材上传结果缺少文件地址。".to_string())?;
+    Ok(WxCdnUploadResult {
+        url,
+        file_size: meta.size,
+        file_uuid,
+    })
+}
+
+async fn upload_wx_cdn_file(
+    cookie_header: &str,
+    cdn_host: &str,
+    upload_params: &WxUploadParams,
+    cdn_file_type: &str,
+    file: WxCdnUploadFile,
+) -> Result<WxCdnUploadResult, String> {
+    let size = file.bytes.len() as u64;
+    if size == 0 {
+        return Err("视频号素材文件为空，无法上传。".to_string());
+    }
+    let file_uuid = Uuid::new_v4().simple().to_string();
+    let value = upload_wx_cdn_file_part(
+        cookie_header,
+        cdn_host,
+        upload_params,
+        cdn_file_type,
+        &file.name,
+        &file.mime_type,
+        &file_uuid,
+        size,
+        0,
+        size - 1,
+        file.bytes,
+    )
+    .await?;
+    let url = parse_wx_cdn_upload_url(&value)
+        .ok_or_else(|| "视频号素材上传结果缺少文件地址。".to_string())?;
+    Ok(WxCdnUploadResult {
+        url,
+        file_size: size,
+        file_uuid,
+    })
+}
+
+async fn upload_wx_cdn_file_part(
+    cookie_header: &str,
+    cdn_host: &str,
+    upload_params: &WxUploadParams,
+    cdn_file_type: &str,
+    file_name: &str,
+    mime_type: &str,
+    file_uuid: &str,
+    total_size: u64,
+    range_start: u64,
+    range_end: u64,
+    bytes: Vec<u8>,
+) -> Result<Value, String> {
+    let block_md5 = format!("{:x}", md5::compute(&bytes));
+    let part = reqwest::multipart::Part::bytes(bytes)
+        .file_name(file_name.to_string())
+        .mime_str(mime_type)
+        .map_err(|error| format!("视频号素材类型无效: {error}"))?;
+    let form = reqwest::multipart::Form::new()
+        .text("ver", "1".to_string())
+        .text("seq", format!("{}{}", Utc::now().timestamp_millis(), Uuid::new_v4().simple()))
+        .text("weixinnum", upload_params.uin.clone())
+        .text("apptype", upload_params.app_type.clone())
+        .text("filetype", upload_params.file_type(cdn_file_type)?.to_string())
+        .text("authkey", upload_params.auth_key.clone())
+        .text("hasthumb", "0".to_string())
+        .text("filekey", file_name.to_string())
+        .text("totalsize", total_size.to_string())
+        .text("fileuuid", file_uuid.to_string())
+        .text("rangestart", range_start.to_string())
+        .text("rangeend", range_end.to_string())
+        .text("blockmd5", block_md5)
+        .part("filedata", part)
+        .text("forcetranscode", "0".to_string());
+    let cdn_host = cdn_host
+        .trim()
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .trim_end_matches('/');
+    let url = format!("https://{cdn_host}/snsuploadbig");
+    let response = platform_http_client()
+        .post(url)
+        .header("Cookie", cookie_header)
+        .header("User-Agent", PLATFORM_DESKTOP_USER_AGENT)
+        .header("Accept", PLATFORM_JSON_ACCEPT)
+        .timeout(Duration::from_secs(60))
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|error| format!("视频号素材上传失败: {error}"))?;
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        let body = compact_http_body(&body, 300);
+        return Err(if body.is_empty() {
+            format!("视频号素材上传返回 HTTP {status}")
+        } else {
+            format!("视频号素材上传返回 HTTP {status}: {body}")
+        });
+    }
+    let value = response
+        .json::<Value>()
+        .await
+        .map_err(|error| format!("视频号素材上传结果不是 JSON: {error}"))?;
+    ensure_wx_cdn_upload_success(&value, "视频号素材上传失败")?;
+    Ok(value)
+}
+
+impl WxUploadParams {
+    fn file_type(&self, cdn_file_type: &str) -> Result<&str, String> {
+        match cdn_file_type {
+            WX_CDN_FILE_TYPE_VIDEO => Ok(self.video_file_type.as_str()),
+            WX_CDN_FILE_TYPE_PICTURE => Ok(self.picture_file_type.as_str()),
+            "thumbFileType" => Ok(self.thumb_file_type.as_str()),
+            _ => Err("视频号素材上传类型不支持。".to_string()),
+        }
+    }
+}
+
+fn parse_wx_upload_params(value: &Value) -> Result<WxUploadParams, String> {
+    let data = response_data(value).unwrap_or(value);
+    let normal_file = wx_text_or_number_deep(data, &["normalFile", "normal_file"])
+        .unwrap_or_else(|| "20310".to_string());
+    Ok(WxUploadParams {
+        uin: wx_required_upload_param(data, &["uin", "fakeUin", "weixinnum"], "uin")?,
+        app_type: wx_required_upload_param(data, &["appType", "app_type", "apptype"], "appType")?,
+        auth_key: wx_required_upload_param(data, &["authKey", "auth_key", "authkey"], "authKey")?,
+        video_file_type: wx_text_or_number_deep(data, &["videoFileType", "video_file_type"])
+            .unwrap_or_else(|| normal_file.clone()),
+        picture_file_type: wx_text_or_number_deep(data, &["pictureFileType", "picture_file_type"])
+            .unwrap_or_else(|| normal_file.clone()),
+        thumb_file_type: wx_text_or_number_deep(data, &["thumbFileType", "thumb_file_type"])
+            .unwrap_or(normal_file),
+    })
+}
+
+fn wx_required_upload_param(data: &Value, keys: &[&str], label: &str) -> Result<String, String> {
+    wx_text_or_number_deep(data, keys)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| format!("视频号上传授权缺少 {label}。"))
+}
+
+fn wx_text_or_number_deep(value: &Value, keys: &[&str]) -> Option<String> {
+    match value {
+        Value::Object(map) => {
+            for key in keys {
+                if let Some(text) = map.get(*key).and_then(wx_value_to_compact_text) {
+                    return Some(text);
+                }
+            }
+            map.values().find_map(|value| wx_text_or_number_deep(value, keys))
+        }
+        Value::Array(items) => items.iter().find_map(|value| wx_text_or_number_deep(value, keys)),
+        _ => None,
+    }
+}
+
+fn wx_value_to_compact_text(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) => Some(text.trim().to_string()).filter(|value| !value.is_empty()),
+        Value::Number(number) => Some(number.to_string()),
+        Value::Bool(value) => Some(if *value { "1" } else { "0" }.to_string()),
+        _ => None,
+    }
+}
+
+fn ensure_wx_cdn_upload_success(value: &Value, fallback: &str) -> Result<(), String> {
+    let Some(code) = first_i64(value, &["ret", "errCode", "errcode", "code"]) else {
+        return Ok(());
+    };
+    if code == 0 {
+        return Ok(());
+    }
+    let message = first_string_deep(value, &["errMsg", "errmsg", "message", "msg"])
+        .unwrap_or_else(|| fallback.to_string());
+    Err(format!("{message} ({code})"))
+}
+
+fn wx_cdn_upload_ranges(size: u64, chunk_size: u64) -> Vec<(u64, u64)> {
+    if size == 0 || chunk_size == 0 {
+        return Vec::new();
+    }
+    let mut ranges = Vec::new();
+    let mut start = 0;
+    while start < size {
+        let end = (start + chunk_size).min(size) - 1;
+        ranges.push((start, end));
+        start = end + 1;
+    }
+    ranges
+}
+
+fn parse_wx_cdn_host(value: &Value) -> String {
+    let data = response_data(value).unwrap_or(value);
+    wx_text_or_number_deep(data, &["cdnHost", "cdn_host"])
+        .or_else(|| {
+            find_value_by_key(data, "cdnHostList")
+                .and_then(|value| value.as_array())
+                .and_then(|items| items.first())
+                .and_then(wx_value_to_compact_text)
+        })
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| WX_CDN_DEFAULT_HOST.to_string())
+}
+
+fn wx_publish_media_requests<'a>(
+    target: &'a PublishWorkTargetRequest,
+    content_type: &str,
+) -> Result<&'a [PublishWorkMediaRequest], String> {
+    let media_type = wx_publish_media_type(content_type)?;
+    if target.media.is_empty() {
+        return Err("请先选择视频号作品素材。".to_string());
+    }
+    if media_type == WX_POST_MEDIA_TYPE_VIDEO {
+        if target.media.len() != 1 {
+            return Err("视频号视频发布只支持选择一个视频素材。".to_string());
+        }
+        if target.media[0].media_type.trim() != "video" {
+            return Err("视频号视频发布需要选择视频素材。".to_string());
+        }
+    } else if target.media.iter().any(|media| media.media_type.trim() != "image") {
+        return Err("视频号图文发布只支持图片素材。".to_string());
+    }
+    Ok(&target.media)
+}
+
+fn wx_media_meta(
+    media: &PublishWorkMediaRequest,
+    media_type: i64,
+) -> Result<WxMediaMeta, String> {
+    let local = local_publish_media(media, "视频号")?;
+    let width = media.width.map(i64::from).unwrap_or(0);
+    let height = media.height.map(i64::from).unwrap_or(0);
+    if width <= 0 || height <= 0 {
+        return Err("视频号发布需要读取素材宽高，请重新选择素材后再发布。".to_string());
+    }
+    let duration_millis = if media_type == WX_POST_MEDIA_TYPE_VIDEO {
+        let duration = media
+            .duration
+            .filter(|value| value.is_finite() && *value > 0.0)
+            .ok_or_else(|| "视频号视频发布需要读取视频时长，请重新选择视频后再发布。".to_string())?;
+        Some((duration * 1000.0).round() as i64)
+    } else {
+        None
+    };
+    Ok(WxMediaMeta {
+        name: local.name,
+        mime_type: wx_media_mime(local.path, media_type),
+        size: local.size,
+        width,
+        height,
+        duration_millis,
+    })
+}
+
+fn wx_media_mime(path: &Path, media_type: i64) -> String {
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    match (media_type, extension.as_str()) {
+        (WX_POST_MEDIA_TYPE_VIDEO, "mov") => "video/quicktime",
+        (WX_POST_MEDIA_TYPE_VIDEO, "m4v") => "video/x-m4v",
+        (WX_POST_MEDIA_TYPE_VIDEO, _) => "video/mp4",
+        (_, "png") => "image/png",
+        (_, "webp") => "image/webp",
+        (_, "gif") => "image/gif",
+        _ => "image/jpeg",
+    }
+    .to_string()
+}
+
+fn wx_cover_upload_file(media: &PublishWorkMediaRequest) -> Result<WxCdnUploadFile, String> {
+    let data_url = media
+        .cover_data_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "视频号视频封面生成失败，请重新选择视频后再发布。".to_string())?;
+    let (metadata, encoded) = data_url
+        .split_once(',')
+        .ok_or_else(|| "视频号视频封面数据无效。".to_string())?;
+    let mime_type = metadata
+        .strip_prefix("data:")
+        .and_then(|value| value.split(';').next())
+        .filter(|value| value.starts_with("image/"))
+        .unwrap_or("image/jpeg")
+        .to_string();
+    let extension = match mime_type.as_str() {
+        "image/png" => "png",
+        "image/webp" => "webp",
+        _ => "jpg",
+    };
+    let bytes = general_purpose::STANDARD
+        .decode(encoded)
+        .map_err(|error| format!("视频号视频封面解码失败: {error}"))?;
+    if bytes.is_empty() {
+        return Err("视频号视频封面为空。".to_string());
+    }
+    Ok(WxCdnUploadFile {
+        name: format!("finder_video_cover.{extension}"),
+        mime_type,
+        bytes,
+    })
+}
+
+fn wx_cdn_file_type(media_type: i64) -> &'static str {
+    if media_type == WX_POST_MEDIA_TYPE_VIDEO {
+        WX_CDN_FILE_TYPE_VIDEO
+    } else {
+        WX_CDN_FILE_TYPE_PICTURE
+    }
+}
+
+fn parse_wx_cdn_upload_url(value: &Value) -> Option<String> {
+    first_string_deep(value, &["httpsUrl", "https_url", "DownloadURL", "downloadUrl", "fileurl", "fileUrl"])
+        .map(|url| url.replace(WX_CDN_REPLACE_HOST_PREFIX, WX_CDN_PUBLIC_HOST_PREFIX))
+        .filter(|url| !url.trim().is_empty())
+}
+
+fn wx_card_show_style(media_type: i64, width: i64, height: i64) -> Option<i64> {
+    if media_type == WX_POST_MEDIA_TYPE_VIDEO && width > height {
+        Some(1)
+    } else {
+        None
+    }
+}
+
+fn wx_publish_remote_id(value: &Value) -> Option<String> {
+    let data = response_data(value).unwrap_or(value);
+    wx_text_or_number_deep(data, &["objectId", "object_id", "feedId", "feed_id", "id"])
+}
+
 pub(super) async fn fetch_wx_channels_account_from_cookie(
     cookie_header: &str,
     login_cookie: String,
@@ -354,6 +1082,19 @@ pub(super) async fn fetch_wx_channels_account_content(
     let profile = fetch_wx_channels_account_from_cookie(cookie_header, login_cookie)
         .await
         .map_err(|error| plugin_error_message(&error))?;
+    fetch_wx_channels_account_content_with_profile_snapshot(
+        cookie_header,
+        account_id,
+        plugin_account_profile_snapshot(account_id, "wechat-channels", &profile),
+    )
+    .await
+}
+
+pub(crate) async fn fetch_wx_channels_account_content_with_profile_snapshot(
+    cookie_header: &str,
+    account_id: &str,
+    profile_snapshot: ChannelAccountProfileSnapshot,
+) -> Result<ChannelAccountContent, String> {
     let now = Utc::now();
     let (previous_day, yesterday) = wx_yesterday_keypoint_window_seconds();
     let statistic_body = json!({
@@ -361,26 +1102,28 @@ pub(super) async fn fetch_wx_channels_account_content(
         "startTs": previous_day,
         "endTs": yesterday,
     });
-    let fans_value = request_plugin_json_with_body(
-        "POST",
-        STATISTIC_FANS_TREND_API,
-        cookie_header,
-        STATISTIC_HEADERS,
-        Some(statistic_body.clone()),
-    )
-    .await
-    .map_err(|error| format!("视频号关注数据同步失败: {error}"))?;
+    let (fans_value_result, post_value_result, latest_video_work_result, latest_article_work_result) = tokio::join!(
+        request_plugin_json_with_body(
+            "POST",
+            STATISTIC_FANS_TREND_API,
+            cookie_header,
+            STATISTIC_HEADERS,
+            Some(statistic_body.clone()),
+        ),
+        request_plugin_json_with_body(
+            "POST",
+            STATISTIC_POST_TOTAL_API,
+            cookie_header,
+            STATISTIC_HEADERS,
+            Some(statistic_body),
+        ),
+        fetch_wx_channels_latest_work(cookie_header, account_id, "video"),
+        fetch_wx_channels_latest_work(cookie_header, account_id, "article"),
+    );
+    let fans_value = fans_value_result.map_err(|error| format!("视频号关注数据同步失败: {error}"))?;
     ensure_wx_success(&fans_value, "视频号关注数据同步失败")?;
 
-    let post_value = request_plugin_json_with_body(
-        "POST",
-        STATISTIC_POST_TOTAL_API,
-        cookie_header,
-        STATISTIC_HEADERS,
-        Some(statistic_body),
-    )
-    .await
-    .map_err(|error| format!("视频号作品数据同步失败: {error}"))?;
+    let post_value = post_value_result.map_err(|error| format!("视频号作品数据同步失败: {error}"))?;
     ensure_wx_success(&post_value, "视频号作品数据同步失败")?;
 
     let overview = ChannelAccountOverview {
@@ -398,27 +1141,13 @@ pub(super) async fn fetch_wx_channels_account_content(
         sync_status: "synced".to_string(),
         error: None,
     };
-    let latest_video_work = fetch_wx_channels_latest_work(cookie_header, account_id, "video")
-        .await
-        .unwrap_or(None);
-    let latest_article_work = fetch_wx_channels_latest_work(cookie_header, account_id, "article")
-        .await
-        .unwrap_or(None);
+    let latest_video_work = latest_video_work_result.unwrap_or(None);
+    let latest_article_work = latest_article_work_result.unwrap_or(None);
 
     Ok(ChannelAccountContent {
         account_id: account_id.to_string(),
         platform_id: "wechat-channels".to_string(),
-        profile: Some(ChannelAccountProfileSnapshot {
-            account_id: account_id.to_string(),
-            platform_id: "wechat-channels".to_string(),
-            followers: profile.fans_count,
-            following: profile.following_count,
-            likes: profile.like_count,
-            last_sync_at: Some(now),
-            updated_at: Some(now),
-            sync_status: "synced".to_string(),
-            error: None,
-        }),
+        profile: Some(profile_snapshot),
         overview_yesterday: Some(overview.clone()),
         overview_seven: Some(overview),
         overview_thirty: None,

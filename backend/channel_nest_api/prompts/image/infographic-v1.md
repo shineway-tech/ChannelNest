@@ -1,0 +1,1 @@
+Create one professional infographic with clear information architecture, readable hierarchy, concise labels, and publication-ready visual polish. Choose visual metaphors that clarify the source content. Avoid fake statistics, unsupported claims, platform UI imitation, decorative clutter, and tiny unreadable text.

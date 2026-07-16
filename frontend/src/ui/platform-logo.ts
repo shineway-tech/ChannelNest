@@ -1,9 +1,9 @@
 import type { PlatformInfo } from "../domain/types";
-import { platformIcons } from "../domain/platforms";
+import { normalizeChannelPlatformId, platformIcons } from "../domain/platforms";
 import { escapeAttribute, escapeHtml } from "../utils/html";
 
 export function platformLogo(platform: PlatformInfo, size: "default" | "large" | "avatar" = "default") {
-  const brand = platformIcons[platform.id];
+  const brand = platformIcons[normalizeChannelPlatformId(platform.id)];
   const color = brand ? `#${brand.hex}` : platform.color;
   const inner = brand
     ? "markup" in brand

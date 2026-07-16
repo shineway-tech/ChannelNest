@@ -1,10 +1,29 @@
-import type { ChannelAccount } from "./types";
+import { normalizeChannelPlatformId } from "./platforms";
 
-export type ContentTab = "overview" | "works" | "comments" | "data";
+export type ContentTab = "overview" | "works";
+export type ChannelWorkType = "video" | "article";
 
 export type WorkStatus = "published" | "reviewing" | "draft";
-export type CommentStatus = "unread" | "replied" | "risk";
-export type CommentSentiment = "positive" | "neutral" | "risk";
+
+const ACCOUNT_CONTENT_PLATFORM_IDS = ["xiaohongshu", "wechat-channels", "douyin", "bilibili", "kuaishou"] as const;
+const WORKS_PAGE_PLATFORM_IDS = ACCOUNT_CONTENT_PLATFORM_IDS;
+const TYPED_WORKS_PLATFORM_IDS = ["wechat-channels", "bilibili"] as const;
+
+export function supportsAccountContent(platformId: string) {
+  return includesPlatformId(ACCOUNT_CONTENT_PLATFORM_IDS, platformId);
+}
+
+export function supportsWorksPages(platformId: string) {
+  return includesPlatformId(WORKS_PAGE_PLATFORM_IDS, platformId);
+}
+
+export function supportsTypedWorks(platformId: string) {
+  return includesPlatformId(TYPED_WORKS_PLATFORM_IDS, platformId);
+}
+
+function includesPlatformId(platformIds: readonly string[], platformId: string) {
+  return platformIds.includes(normalizeChannelPlatformId(platformId));
+}
 
 export interface ChannelWork {
   id: string;
@@ -96,93 +115,4 @@ export interface ChannelWorksPage {
   updatedAt?: string | null;
   syncStatus?: string;
   error?: string | null;
-}
-
-export interface ChannelComment {
-  id: string;
-  platformId: string;
-  accountId: string;
-  workId: string;
-  author: string;
-  content: string;
-  createdAt: string;
-  status: CommentStatus;
-  sentiment: CommentSentiment;
-}
-
-const workTitles = [
-  "新品种草视频",
-  "达人合作复盘",
-  "直播间切片",
-  "热点话题跟进",
-  "粉丝问答合集",
-  "爆款素材测试",
-];
-
-const commentContents = [
-  "这个组合怎么买更划算？",
-  "想看同系列的真实使用反馈。",
-  "价格和上次活动一样吗？",
-  "已经收藏了，等开播提醒。",
-  "这个卖点可以再讲细一点。",
-  "评论区有人反馈发货慢，需要跟进。",
-];
-
-const authors = ["小夏", "Lynn", "阿川", "Mia", "北北", "Kevin"];
-const workStatuses: WorkStatus[] = ["published", "published", "reviewing", "draft"];
-const commentStatuses: CommentStatus[] = ["unread", "replied", "unread", "risk"];
-const commentSentiments: CommentSentiment[] = ["neutral", "positive", "neutral", "risk"];
-
-export function mockWorksForAccounts(accounts: ChannelAccount[]) {
-  return accounts.flatMap((account, accountIndex) => {
-    const seed = hashSeed(account.id || account.uid || account.nickname);
-    return [0, 1, 2].map((offset): ChannelWork => {
-      const value = seed + accountIndex * 17 + offset * 11;
-      const title = workTitles[value % workTitles.length];
-      return {
-        id: `${account.id}-work-${offset + 1}`,
-        platformId: account.platformId,
-        accountId: account.id,
-        title: `${title} #${(value % 9) + 1}`,
-        publishedAt: dateBeforeJune30(value + offset * 2),
-        status: workStatuses[value % workStatuses.length],
-        views: 2400 + (value % 21) * 860 + offset * 420,
-        likes: 180 + (value % 17) * 64 + offset * 35,
-        comments: 12 + (value % 9) * 7 + offset * 3,
-      };
-    });
-  });
-}
-
-export function mockCommentsForAccounts(accounts: ChannelAccount[]) {
-  const works = mockWorksForAccounts(accounts);
-  return accounts.flatMap((account, accountIndex) => {
-    const seed = hashSeed(account.uid || account.id || account.nickname);
-    const accountWorks = works.filter((work) => work.accountId === account.id);
-    return [0, 1, 2, 3].map((offset): ChannelComment => {
-      const value = seed + accountIndex * 13 + offset * 7;
-      const work = accountWorks[offset % Math.max(accountWorks.length, 1)];
-      return {
-        id: `${account.id}-comment-${offset + 1}`,
-        platformId: account.platformId,
-        accountId: account.id,
-        workId: work?.id || `${account.id}-work-1`,
-        author: authors[value % authors.length],
-        content: commentContents[value % commentContents.length],
-        createdAt: dateBeforeJune30(value + offset),
-        status: commentStatuses[value % commentStatuses.length],
-        sentiment: commentSentiments[value % commentSentiments.length],
-      };
-    });
-  });
-}
-
-function hashSeed(value: string) {
-  return Array.from(value || "channel").reduce((sum, char) => sum + char.charCodeAt(0), 0);
-}
-
-function dateBeforeJune30(seed: number) {
-  const day = 29 - (seed % 18);
-  const hour = 9 + (seed % 9);
-  return new Date(Date.UTC(2026, 5, day, hour, 30)).toISOString();
 }

@@ -1,0 +1,1 @@
+Create a refined social knowledge card. Use short, legible copy, strong hierarchy, intentional spacing, and a consistent visual system across the series. Keep the core message immediately scannable. Do not imitate a platform interface or add engagement counters.

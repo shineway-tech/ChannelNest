@@ -1,6 +1,7 @@
 use super::*;
 use base64::{engine::general_purpose, Engine as _};
 use reqwest::Client;
+use std::{future::Future, path::Path, sync::OnceLock};
 use url::form_urlencoded;
 
 mod bilibili;
@@ -8,6 +9,161 @@ mod douyin;
 mod kuaishou;
 mod wechat_channels;
 mod xiaohongshu;
+
+static PLATFORM_HTTP_CLIENT: OnceLock<Client> = OnceLock::new();
+pub(crate) const PLATFORM_DESKTOP_USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
+pub(crate) const PLATFORM_JSON_ACCEPT: &str = "application/json, text/plain, */*";
+pub(crate) const PLATFORM_ACCEPT_LANGUAGE: &str = "zh-CN,zh;q=0.9,en;q=0.8";
+pub(crate) const PLATFORM_PUBLISH_UPLOAD_CONCURRENCY: usize = 3;
+
+pub(crate) fn platform_http_client() -> &'static Client {
+    PLATFORM_HTTP_CLIENT.get_or_init(Client::new)
+}
+
+pub(crate) struct LocalPublishMedia<'a> {
+    pub(crate) path: &'a Path,
+    pub(crate) name: String,
+    pub(crate) size: u64,
+}
+
+pub(crate) fn local_publish_media<'a>(
+    media: &'a PublishWorkMediaRequest,
+    platform_name: &str,
+) -> Result<LocalPublishMedia<'a>, String> {
+    let path = Path::new(media.path.trim());
+    let metadata = std::fs::metadata(path)
+        .map_err(|error| format!("读取{platform_name}素材文件失败: {error}"))?;
+    if !metadata.is_file() {
+        return Err(format!("{platform_name}素材路径不是文件，无法发布。"));
+    }
+    if metadata.len() == 0 {
+        return Err(format!("{platform_name}素材文件为空，无法发布。"));
+    }
+    let name = match media.name.trim() {
+        "" => path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("media")
+            .to_string(),
+        name => name.to_string(),
+    };
+    Ok(LocalPublishMedia {
+        path,
+        name,
+        size: metadata.len(),
+    })
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct PublishUploadLabels {
+    pub(crate) platform: &'static str,
+    pub(crate) item: &'static str,
+    pub(crate) collection: &'static str,
+}
+
+pub(crate) async fn upload_publish_media_in_order<T, F, Fut>(
+    medias: &[PublishWorkMediaRequest],
+    labels: PublishUploadLabels,
+    upload: F,
+) -> Result<Vec<T>, String>
+where
+    T: Send + 'static,
+    F: Fn(PublishWorkMediaRequest) -> Fut + Clone + Send + 'static,
+    Fut: Future<Output = Result<T, String>> + Send + 'static,
+{
+    let mut uploaded = (0..medias.len()).map(|_| None).collect::<Vec<_>>();
+    for (chunk_index, chunk) in medias
+        .chunks(PLATFORM_PUBLISH_UPLOAD_CONCURRENCY)
+        .enumerate()
+    {
+        let base_index = chunk_index * PLATFORM_PUBLISH_UPLOAD_CONCURRENCY;
+        let mut jobs = tokio::task::JoinSet::new();
+        for (offset, media) in chunk.iter().cloned().enumerate() {
+            let index = base_index + offset;
+            let upload = upload.clone();
+            jobs.spawn(async move { (index, upload(media).await) });
+        }
+
+        while let Some(result) = jobs.join_next().await {
+            match result {
+                Ok((index, Ok(item))) => uploaded[index] = Some(item),
+                Ok((index, Err(error))) => {
+                    return Err(format!(
+                        "{}第 {} {}上传失败: {error}",
+                        labels.platform,
+                        index + 1,
+                        labels.item
+                    ));
+                }
+                Err(error) => {
+                    return Err(format!(
+                        "{}{}上传任务失败: {error}",
+                        labels.platform, labels.collection
+                    ));
+                }
+            }
+        }
+    }
+
+    uploaded
+        .into_iter()
+        .enumerate()
+        .map(|(index, item)| {
+            item.ok_or_else(|| {
+                format!(
+                    "{}第 {} {}未返回上传结果",
+                    labels.platform,
+                    index + 1,
+                    labels.item
+                )
+            })
+        })
+        .collect()
+}
+
+pub(crate) fn compact_http_body(text: &str, max_chars: usize) -> String {
+    text.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(max_chars)
+        .collect()
+}
+
+pub(crate) fn channel_profile_snapshot(
+    account_id: &str,
+    platform_id: &str,
+    followers: Option<u64>,
+    following: Option<u64>,
+    likes: Option<u64>,
+) -> ChannelAccountProfileSnapshot {
+    let now = Utc::now();
+    ChannelAccountProfileSnapshot {
+        account_id: account_id.to_string(),
+        platform_id: platform_id.to_string(),
+        followers,
+        following,
+        likes,
+        last_sync_at: Some(now),
+        updated_at: Some(now),
+        sync_status: "synced".to_string(),
+        error: None,
+    }
+}
+
+pub(crate) fn plugin_account_profile_snapshot(
+    account_id: &str,
+    platform_id: &str,
+    profile: &PluginAccountInfo,
+) -> ChannelAccountProfileSnapshot {
+    channel_profile_snapshot(
+        account_id,
+        platform_id,
+        profile.fans_count,
+        profile.following_count,
+        profile.like_count,
+    )
+}
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum HomepageKind {
@@ -96,12 +252,30 @@ pub(crate) fn platform(platform_id: &str) -> Option<&'static ChannelPlatform> {
     }
 }
 
+pub(crate) fn supports_account_content(platform_id: &str) -> bool {
+    platform(platform_id).is_some()
+}
+
+pub(crate) fn supports_works_pages(platform_id: &str) -> bool {
+    platform(platform_id).is_some()
+}
+
+pub(crate) fn supports_typed_works(platform_id: &str) -> bool {
+    matches!(
+        normalize_platform_id(platform_id).as_str(),
+        "wechat-channels" | "bilibili"
+    )
+}
+
 pub(crate) fn normalize_platform_id(value: &str) -> String {
-    match value {
-        "xhs" | "Xhs" | "XHS" => "xiaohongshu".to_string(),
-        "wxSph" | "wxsph" | "wechat" => "wechat-channels".to_string(),
-        "kwai" | "KWAI" | "Kwai" => "kuaishou".to_string(),
-        "BILIBILI" => "bilibili".to_string(),
+    let normalized = value.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "xhs" => "xiaohongshu".to_string(),
+        "wx-sph" | "wechat" | "wechat_channels" | "wxsph" | "wxsph-video" => {
+            "wechat-channels".to_string()
+        }
+        "ks" | "kwai" => "kuaishou".to_string(),
+        "bili" => "bilibili".to_string(),
         other => other.to_string(),
     }
 }
@@ -146,18 +320,6 @@ pub(crate) fn plugin_login_url(platform_id: &str, login_target: Option<&str>) ->
     }
 }
 
-pub(crate) fn kuaishou_home_info_api_url() -> &'static str {
-    kuaishou::HOME_INFO_API
-}
-
-pub(crate) fn kuaishou_article_manage_video_url() -> &'static str {
-    kuaishou::ARTICLE_MANAGE_VIDEO_URL
-}
-
-pub(crate) fn kuaishou_article_manage_video_list_api_url() -> &'static str {
-    kuaishou::ARTICLE_MANAGE_VIDEO_LIST_API
-}
-
 fn account_search_url(prefix: &str, keyword: &str) -> Result<String, String> {
     if keyword.trim().is_empty() {
         return Err("账号缺少主页标识，无法打开主页".to_string());
@@ -181,30 +343,39 @@ fn domain_matches(domain: &str, rule: &DomainRule) -> bool {
 use bilibili::{
     fetch_bilibili_account_content,
     fetch_bilibili_works_page,
-    probe_bilibili_creator_session,
+    fetch_bilibili_creator_session,
 };
+pub(crate) use bilibili::fetch_bilibili_account_content_with_profile_snapshot;
 use douyin::{
     fetch_douyin_account_content,
     fetch_douyin_creator_account_from_cookie,
     fetch_douyin_works_page,
-    has_douyin_login_cookie,
 };
+pub(crate) use douyin::{
+    fetch_douyin_account_content_with_profile_snapshot,
+    has_douyin_login_cookie,
+    publish_douyin_work,
+};
+pub(crate) use bilibili::publish_bilibili_work;
 use kuaishou::{
     fetch_kuaishou_account_content,
     fetch_kuaishou_creator_account_from_cookie,
     fetch_kuaishou_works_page,
 };
 pub(crate) use kuaishou::{
-    collect_kuaishou_plugin_account_from_browser_context,
     fetch_kuaishou_account_content_with_profile,
     has_kuaishou_creator_login_cookie_header,
-    kuaishou_management_works_body,
-    parse_kuaishou_management_works_page,
+    kuaishou_account_from_login_cookie,
+    publish_kuaishou_work,
 };
 use wechat_channels::{
     fetch_wx_channels_account_content,
     fetch_wx_channels_account_from_cookie,
     fetch_wx_channels_works_page,
+};
+pub(crate) use wechat_channels::{
+    fetch_wx_channels_account_content_with_profile_snapshot,
+    publish_wx_channels_work,
 };
 use xiaohongshu::{
     fetch_xhs_account_content,
@@ -212,6 +383,11 @@ use xiaohongshu::{
     fetch_xhs_works_page,
     refresh_xhs_account_profile,
     xhs_profile_matches_account,
+};
+pub(crate) use xiaohongshu::{
+    fetch_xhs_account_content_with_profile_snapshot,
+    publish_xhs_work,
+    warm_xhs_creator_signer,
 };
 
 const MAX_AVATAR_BYTES: usize = 2 * 1024 * 1024;
@@ -290,7 +466,7 @@ pub(crate) async fn check_creator_session(
         "bilibili" => {
             let (cookie_header, login_cookie) =
                 saved_cookie_header(saved_login_cookie, "B 站网页登录态已失效，请重新登录后再打开创作中心。")?;
-            let profile = probe_bilibili_creator_session(&cookie_header, login_cookie).await?;
+            let profile = fetch_bilibili_creator_session(&cookie_header, login_cookie).await?;
             Ok(CreatorSessionStatus {
                 login_cookie: Some(profile.login_cookie.clone()),
                 webview_session_id: saved_webview_session_id.map(ToString::to_string),
@@ -361,7 +537,7 @@ pub(crate) fn plugin_cookie_header(login_cookie: &str) -> String {
     login_cookie_to_header(login_cookie)
 }
 
-fn plugin_profile_matches_account(profile: &PluginAccountInfo, account: &ChannelAccount) -> bool {
+pub(crate) fn plugin_profile_matches_account(profile: &PluginAccountInfo, account: &ChannelAccount) -> bool {
     let profile_values = [&profile.uid, &profile.account, &profile.nickname]
         .into_iter()
         .map(|value| normalize_match_key(value))
@@ -466,7 +642,7 @@ pub(crate) async fn collect_plugin_account_info_from_cookie(
             }
             fetch_wx_channels_account_from_cookie(&cookie_header, login_cookie).await
         }
-        "bilibili" => probe_bilibili_creator_session(&cookie_header, login_cookie)
+        "bilibili" => fetch_bilibili_creator_session(&cookie_header, login_cookie)
             .await
             .map_err(PluginAuthError::NotLoggedIn),
         "douyin" => {
@@ -589,16 +765,15 @@ async fn request_plugin_json_with_body(
     headers: &[(&str, &str)],
     body: Option<Value>,
 ) -> Result<Value, String> {
-    let client = Client::new();
     let mut request = if method.eq_ignore_ascii_case("POST") {
-        client.post(url)
+        platform_http_client().post(url)
     } else {
-        client.get(url)
+        platform_http_client().get(url)
     };
     request = request
         .header("Cookie", cookie_header)
-        .header("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36")
-        .header("Accept", "application/json, text/plain, */*")
+        .header("User-Agent", PLATFORM_DESKTOP_USER_AGENT)
+        .header("Accept", PLATFORM_JSON_ACCEPT)
         .timeout(std::time::Duration::from_secs(18));
     if method.eq_ignore_ascii_case("POST") {
         let body = body.unwrap_or_else(|| Value::Object(Default::default()));
@@ -615,7 +790,11 @@ async fn request_plugin_json_with_body(
         .map_err(|error| format!("请求平台账号资料失败: {error}"))?;
     let status = response.status();
     if !status.is_success() {
-        return Err(format!("平台账号资料接口返回 HTTP {status}"));
+        let detail = compact_http_body(&response.text().await.unwrap_or_default(), 300);
+        if detail.is_empty() {
+            return Err(format!("平台账号资料接口返回 HTTP {status}"));
+        }
+        return Err(format!("平台账号资料接口返回 HTTP {status}: {detail}"));
     }
     response
         .json()
@@ -699,15 +878,55 @@ pub(crate) async fn materialize_platform_image(platform_id: &str, value: String)
     }
 }
 
+pub(crate) async fn materialize_platform_work_covers(
+    platform_id: &'static str,
+    works: &mut [ChannelContentWork],
+) -> usize {
+    let mut jobs = tokio::task::JoinSet::new();
+    for (index, work) in works.iter().enumerate() {
+        let Some(cover_url) = work.cover_url.clone() else {
+            continue;
+        };
+        if cover_url.trim().is_empty() || cover_url.starts_with("data:image") {
+            continue;
+        }
+        jobs.spawn(async move {
+            (
+                index,
+                materialize_platform_image(platform_id, cover_url).await,
+            )
+        });
+    }
+
+    let mut materialized = 0usize;
+    while let Some(result) = jobs.join_next().await {
+        match result {
+            Ok((index, cover_url)) => {
+                if let Some(work) = works.get_mut(index) {
+                    work.cover_url = Some(cover_url);
+                    materialized += 1;
+                }
+            }
+            Err(error) => {
+                eprintln!(
+                    "[cover:{}] cover materialize task failed: {error}",
+                    normalize_platform_id(platform_id)
+                );
+            }
+        }
+    }
+    materialized
+}
+
 async fn fetch_avatar_data_url(platform_id: &str, url: &str) -> Result<String, String> {
     let parsed = Url::parse(url).map_err(|error| format!("头像地址无效: {error}"))?;
     if parsed.scheme() != "http" && parsed.scheme() != "https" {
         return Err("头像地址不是 HTTP 图片".to_string());
     }
 
-    let mut request = Client::new()
+    let mut request = platform_http_client()
         .get(parsed)
-        .header("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36")
+        .header("User-Agent", PLATFORM_DESKTOP_USER_AGENT)
         .header("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
         .timeout(std::time::Duration::from_secs(15));
     if let Some(platform) = crate::platforms::platform(platform_id) {

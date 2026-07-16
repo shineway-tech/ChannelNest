@@ -1,7 +1,10 @@
+@import "flatpickr/dist/flatpickr.css";
 @import "./styles/base.css";
 @import "./styles/auth.css";
 @import "./styles/layout.css";
 @import "./styles/channels.css";
+@import "./styles/publish.css";
+@import "./styles/commerce.css";
 @import "./styles/settings.css";
 @import "./styles/releases.css";
 @import "./styles/forms-modals.css";

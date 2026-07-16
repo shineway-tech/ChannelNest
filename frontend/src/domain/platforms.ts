@@ -47,6 +47,27 @@ export const fallbackPlatforms: PlatformInfo[] = [
 
 export type PlatformIcon = SimpleIcon | { title: string; hex: string; markup: string };
 
+export function normalizeChannelPlatformId(value: string) {
+  const normalized = value.trim().toLowerCase();
+  switch (normalized) {
+    case "xhs":
+      return "xiaohongshu";
+    case "wx-sph":
+    case "wechat":
+    case "wechat_channels":
+    case "wxsph":
+    case "wxsph-video":
+      return "wechat-channels";
+    case "ks":
+    case "kwai":
+      return "kuaishou";
+    case "bili":
+      return "bilibili";
+    default:
+      return normalized;
+  }
+}
+
 export const wechatChannelsIcon: PlatformIcon = {
   title: "视频号",
   hex: "ff9f2e",

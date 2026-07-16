@@ -1,25 +1,3 @@
-.activity-panel {
-  padding: 12px;
-  display: grid;
-  gap: 8px;
-}
-
-.activity-row {
-  min-height: 68px;
-  display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: rgba(4, 18, 21, 0.38);
-}
-
-.theme-light .activity-row {
-  background: rgba(239, 248, 249, 0.76);
-}
-
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -29,59 +7,6 @@
   background: rgba(1, 8, 10, 0.66);
   backdrop-filter: blur(12px);
   z-index: 10;
-}
-
-.settings-modal {
-  width: min(980px, calc(100vw - 72px));
-  max-height: calc(100vh - 72px);
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.modal-head,
-.modal-foot {
-  padding: 18px 20px;
-  border-bottom: 1px solid var(--line);
-}
-
-.modal-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 20px;
-}
-
-.modal-head p {
-  margin-top: 5px;
-  color: var(--muted);
-}
-
-.modal-foot {
-  justify-content: flex-end;
-  border-top: 1px solid var(--line);
-  border-bottom: 0;
-}
-
-.settings-body {
-  padding: 16px;
-  overflow: auto;
-  display: grid;
-  gap: 14px;
-}
-
-.config-section {
-  padding: 16px;
-  border-radius: 8px;
-}
-
-.section-title {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 18px;
-  margin-bottom: 14px;
 }
 
 .switch-row {
@@ -214,25 +139,6 @@ input[type="checkbox"] {
   margin-bottom: 0;
   color: var(--text);
   font-size: 13px;
-}
-
-.platform-configs {
-  display: grid;
-  gap: 12px;
-}
-
-.platform-config-card {
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: rgba(4, 18, 21, 0.48);
-}
-
-.config-card-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 14px;
 }
 
 .auth-modal {

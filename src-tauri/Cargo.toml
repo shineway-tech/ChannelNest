@@ -1,6 +1,6 @@
 [package]
 name = "channel-nest"
-version = "1.0.1"
+version = "1.1.0"
 description = "Channel Nest desktop client"
 authors = ["fanxiao"]
 edition = "2021"
@@ -15,15 +15,19 @@ tauri-build = { version = "2.2.0", features = [] }
 [dependencies]
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
+hmac = "0.12"
 md5 = "0.8.0"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls", "stream"] }
 rquickjs = "0.12.0"
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tauri = { version = "2.5.0", features = [] }
+sha1 = "0.10"
+sha2 = "0.10"
+tauri = { version = "2.5.0", features = ["protocol-asset"] }
+tauri-plugin-dialog = "2"
 tauri-plugin-process = "2.3.1"
 tauri-plugin-updater = "2.10.1"
-tokio = { version = "1", features = ["io-util", "net", "sync"] }
+tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "sync"] }
 url = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
