@@ -458,7 +458,7 @@ jobs:
         env:
           DESKTOP_UPDATE_RELEASE_TOKEN: ${{ secrets.DESKTOP_UPDATE_RELEASE_TOKEN }}
           DESKTOP_UPDATE_API_URL: ${{ secrets.DESKTOP_UPDATE_API_URL }}
-          DESKTOP_UPDATE_NOTES: 本次更新新增图片生成 AI 提示词优化能力，优化参考图清理、生成图片加入资源库和发布资源选择体验；改进支付宝扫码支付弹窗，在 Windows 上二维码可完整显示并居中；完善会员积分记录、订单记录、错误提示和多处内容生成/发布界面细节。
+          DESKTOP_UPDATE_NOTES: 本次更新修复部分 macOS Apple Silicon 设备上平台图标发白、模糊的问题；macOS 自动更新包改为从已公证 DMG 应用重新生成，避免更新包丢失 Apple 签名元数据导致更新失败。
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
