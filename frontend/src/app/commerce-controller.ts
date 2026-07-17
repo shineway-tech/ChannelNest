@@ -403,13 +403,17 @@ export class CommerceController {
     });
     document.querySelector<HTMLInputElement>("[data-ai-references]")?.addEventListener("change", (event) => {
       if (event.currentTarget instanceof HTMLInputElement) {
+        if (event.currentTarget.form) this.captureImageDraft(event.currentTarget.form);
         void this.uploadReferences(Array.from(event.currentTarget.files || []));
       }
     });
     document.querySelectorAll<HTMLButtonElement>("[data-remove-reference]").forEach((button) => {
       button.addEventListener("click", () => {
         const referenceId = button.dataset.removeReference;
-        if (referenceId) void this.removeReference(referenceId);
+        if (referenceId) {
+          if (button.form) this.captureImageDraft(button.form);
+          void this.removeReference(referenceId);
+        }
       });
     });
     document.querySelectorAll<HTMLInputElement>("[data-ai-palette-option]").forEach((input) => {
