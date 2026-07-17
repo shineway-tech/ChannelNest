@@ -181,6 +181,9 @@ jobs:
           done
 
       - name: Prepare macOS release artifacts
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
 
@@ -191,18 +194,44 @@ jobs:
           mkdir -p "$output_dir"
 
           dmg_file="$(find "$bundle_dir/dmg" -maxdepth 1 -name '*.dmg' -print -quit)"
-          app_tar_file="$(find "$bundle_dir/macos" -maxdepth 1 -name '*.app.tar.gz' -print -quit)"
-          app_sig_file="$(find "$bundle_dir/macos" -maxdepth 1 -name '*.app.tar.gz.sig' -print -quit)"
 
-          if [ -z "$dmg_file" ] || [ -z "$app_tar_file" ] || [ -z "$app_sig_file" ]; then
+          if [ -z "$dmg_file" ]; then
             echo "Missing expected macOS release artifacts."
             find "$bundle_dir" -maxdepth 4 -type f -print
             exit 1
           fi
 
+          fixed_app_tar="$output_dir/Channel_Nest_${app_version}_macos_${arch}.app.tar.gz"
+          fixed_app_sig="$output_dir/Channel_Nest_${app_version}_macos_${arch}.app.tar.gz.sig"
+          dmg_work_dir="$(mktemp -d)"
+          mount_dir="$dmg_work_dir/mnt"
+          app_copy_dir="$dmg_work_dir/app"
+          verify_dir="$dmg_work_dir/verify"
+          mkdir -p "$mount_dir" "$app_copy_dir" "$verify_dir"
+
+          hdiutil attach "$dmg_file" -nobrowse -readonly -mountpoint "$mount_dir"
+          app_in_dmg="$(find "$mount_dir" -maxdepth 1 -name '*.app' -type d -print -quit)"
+          if [ -z "$app_in_dmg" ]; then
+            echo "Missing app bundle inside DMG."
+            find "$mount_dir" -maxdepth 2 -print
+            hdiutil detach "$mount_dir" >/dev/null 2>&1 || true
+            exit 1
+          fi
+
+          app_copy="$app_copy_dir/$(basename "$app_in_dmg")"
+          /usr/bin/ditto "$app_in_dmg" "$app_copy"
+          hdiutil detach "$mount_dir"
+
+          # Build updater archive from the notarized DMG app. The default Tauri
+          # macOS updater tarball can lose Apple signing metadata and fail with
+          # "OS error" during updater install, even though the DMG app is valid.
+          codesign --verify --deep --strict --verbose=2 "$app_copy"
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app_copy" "$fixed_app_tar"
+          /usr/bin/ditto -x -k "$fixed_app_tar" "$verify_dir"
+          codesign --verify --deep --strict --verbose=2 "$verify_dir/$(basename "$app_copy")"
+          ./frontend/node_modules/.bin/tauri signer sign "$fixed_app_tar" > "$fixed_app_sig"
+
           cp "$dmg_file" "$output_dir/Channel_Nest_${app_version}_macos_${arch}.dmg"
-          cp "$app_tar_file" "$output_dir/Channel_Nest_${app_version}_macos_${arch}.app.tar.gz"
-          cp "$app_sig_file" "$output_dir/Channel_Nest_${app_version}_macos_${arch}.app.tar.gz.sig"
 
       - name: Upload macOS package artifacts
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
