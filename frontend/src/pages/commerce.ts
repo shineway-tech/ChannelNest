@@ -49,6 +49,7 @@ export interface CommercePageState {
   textResult: string;
   textError: string;
   imageDraft: Record<string, string | number>;
+  imagePromptOptimizing: boolean;
   referenceImages: ImageReference[];
   imageRequest: AiRequestStatus | null;
   imageError: string;
@@ -602,12 +603,21 @@ function renderAiImage(state: CommercePageState) {
           </fieldset>
           <label><span>${text.preset}</span><select name="preset">${optionList(assetScopedOptions.presets, String(draft.preset), state.language)}</select></label>
         </div>
-        <label class="ai-prompt"><span>${text.imageContent}</span><textarea name="prompt" maxlength="2000" required>${escapeHtml(String(draft.prompt))}</textarea></label>
+        <div class="ai-prompt">
+          <div class="ai-prompt-head">
+            <label for="ai-image-prompt">${text.imageContent}</label>
+            <span class="ai-prompt-tools">
+              <button class="ghost-btn ai-optimize-btn ${state.imagePromptOptimizing ? "is-loading" : ""}" type="button" data-ai-optimize-image-prompt ${imageGenerating || state.imagePromptOptimizing ? "disabled" : ""}>${icon(state.imagePromptOptimizing ? "refresh" : "spark")}${state.imagePromptOptimizing ? text.optimizingPrompt : text.optimizePrompt}</button>
+              <small>${text.imagePromptOptimizeCost}</small>
+            </span>
+          </div>
+          <textarea id="ai-image-prompt" name="prompt" maxlength="2000" required ${state.imagePromptOptimizing ? "readonly" : ""}>${escapeHtml(String(draft.prompt))}</textarea>
+        </div>
         <div class="reference-section">
           <div class="reference-row">
             <label class="ghost-btn reference-upload">${icon("plus")}${text.referenceImage}<input type="file" accept="image/jpeg,image/png" multiple data-ai-references /></label>
             <label class="reference-mode"><span>${text.referenceMode}</span><select name="referenceMode">${Object.entries(text.referenceModes).map(([code, name]) => `<option value="${escapeAttribute(code)}" ${draft.referenceMode === code ? "selected" : ""}>${escapeHtml(name)}</option>`).join("")}</select></label>
-            <span>${state.referenceImages.length ? interpolate(text.referencesAdded, { count: state.referenceImages.length }) : text.noReferences}</span>
+            <span class="reference-status">${state.referenceImages.length ? interpolate(text.referencesAdded, { count: state.referenceImages.length }) : text.noReferences}</span>
           </div>
           ${state.referenceImages.length ? `<div class="reference-previews">${state.referenceImages.map((reference, index) => {
     const alt = interpolate(text.referenceImageNumber, { number: index + 1 });
@@ -677,7 +687,7 @@ function renderCheckout(state: CommercePageState) {
       <section class="checkout-dialog" role="dialog" aria-modal="true">
         <div class="checkout-head"><h2>${text.alipayCheckout}</h2><button type="button" data-close-checkout title="${text.close}">${icon("x")}</button></div>
         ${checkoutUrl
-    ? `<div class="checkout-frame-shell"><iframe class="checkout-frame" data-checkout-frame src="${escapeAttribute(checkoutUrl)}" title="${text.alipayCheckout}" referrerpolicy="no-referrer"></iframe></div>`
+    ? `<div class="checkout-frame-shell"><iframe class="checkout-frame" data-checkout-frame src="${escapeAttribute(checkoutUrl)}" title="${text.alipayCheckout}" referrerpolicy="no-referrer" scrolling="no"></iframe></div>`
     : `<div class="checkout-error">${text.invalidCheckout}</div>`}
         <div class="checkout-status"><span class="status-pulse"></span>${text.waitingForPayment}</div>
       </section>

@@ -798,6 +798,39 @@
   flex-direction: column;
 }
 
+.ai-prompt .ai-prompt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 7px;
+}
+
+.ai-prompt-head label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ai-prompt-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.ai-optimize-btn {
+  min-height: 32px;
+  padding: 0 11px;
+}
+
+.ai-optimize-btn.is-loading .svg-icon {
+  animation: spin 0.9s linear infinite;
+}
+
 .ai-prompt textarea {
   min-height: 160px;
   flex: 1;
@@ -1026,6 +1059,17 @@
   grid-template-columns: minmax(390px, 0.95fr) minmax(390px, 1.05fr);
 }
 
+.ai-image-workbench .ai-prompt {
+  min-height: 220px;
+  flex: 0 0 auto;
+}
+
+.ai-image-workbench .ai-prompt textarea {
+  min-height: 160px;
+  height: 160px;
+  flex: 0 0 auto;
+}
+
 .ai-text-workbench .ai-prompt {
   min-height: 210px;
   flex: 0 0 auto;
@@ -1104,15 +1148,24 @@
 }
 
 .reference-mode {
-  min-width: 148px;
-  display: flex;
+  display: inline-flex;
   align-items: center;
+  flex: 0 0 auto;
   gap: 8px;
   color: var(--muted);
   font-size: 11px;
 }
 
+.reference-mode > span {
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+
 .reference-mode select {
+  width: auto;
+  min-width: 120px;
   min-height: 34px;
   padding: 0 30px 0 10px;
 }
@@ -1120,7 +1173,18 @@
 .reference-section {
   display: flex;
   flex-direction: column;
+  margin-top: 2px;
   gap: 9px;
+}
+
+.reference-section .reference-row {
+  align-items: center;
+}
+
+.reference-status {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
 }
 
 .reference-previews {
@@ -1346,7 +1410,8 @@
 }
 
 .checkout-dialog {
-  width: 340px;
+  width: min(420px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
   display: grid;
   justify-items: center;
   gap: 16px;
@@ -1379,17 +1444,20 @@
 }
 
 .checkout-frame-shell {
-  width: 232px;
-  height: 232px;
-  padding: 6px;
+  width: min(252px, calc(100vw - 104px));
+  height: min(336px, calc(100vh - 178px));
+  min-height: 300px;
+  display: grid;
+  place-items: center;
+  padding: 8px;
   border-radius: 6px;
   background: #fff;
   overflow: hidden;
 }
 
 .checkout-frame {
-  width: 220px;
-  height: 220px;
+  width: min(220px, 100%);
+  height: min(220px, 100%);
   display: block;
   border: 0;
   background: #fff;

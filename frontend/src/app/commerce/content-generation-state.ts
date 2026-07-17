@@ -34,6 +34,7 @@ export class ContentGenerationState {
   textResult = "";
   textError = "";
   imageDraft = defaultImageDraft();
+  imagePromptOptimizing = false;
   referenceImages: ImageReference[] = [];
   imageRequest: AiRequestStatus | null = null;
   imageError = "";
@@ -55,6 +56,7 @@ export class ContentGenerationState {
     this.textResult = "";
     this.textError = "";
     this.imageDraft = defaultImageDraft();
+    this.imagePromptOptimizing = false;
     this.referenceImages = [];
     this.imageRequest = null;
     this.imageError = "";

@@ -68,4 +68,20 @@ const checkImages = validateBody(Joi.object({
   }).default({ enabled: false, content: '', position: 'bottom-right' }),
 }), { stripUnknown: true });
 
-module.exports = { checkImages, checkText };
+const checkImagePromptOptimize = validateBody(Joi.object({
+  client_request_id: requestId,
+  asset_type: Joi.string().valid('general', 'xhs_card', 'infographic').required(),
+  prompt: Joi.string().trim().min(1).max(2000)
+    .required(),
+  aspect_ratio: Joi.string().valid(...Catalog.aspectRatios).required(),
+  language: Joi.string().valid('auto', 'zh', 'en', 'ja').default('auto'),
+  reference_mode: Joi.string().valid('identity', 'style', 'palette').default('style'),
+  reference_count: Joi.number().integer().min(0).max(4)
+    .default(0),
+  preset: Joi.string().valid(...Catalog.presets).default('auto'),
+  style: Joi.string().valid(...Catalog.styles).default('auto'),
+  layout: Joi.string().valid(...Catalog.layouts).default('auto'),
+  palette: Joi.string().valid(...Catalog.palettes).default('auto'),
+}), { stripUnknown: true });
+
+module.exports = { checkImagePromptOptimize, checkImages, checkText };

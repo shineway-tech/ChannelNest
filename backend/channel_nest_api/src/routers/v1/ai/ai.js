@@ -60,6 +60,11 @@ class AiController {
     await next();
   }
 
+  async optimizeImagePrompt(ctx, next) {
+    ctx.setData(await AiLogic.optimizeImagePrompt(ctx.state.auth_user.id, ctx.state.entries));
+    await next();
+  }
+
   async request(ctx, next) {
     ctx.setData(await AiLogic.request(ctx.state.auth_user.id, ctx.params.request_id));
     await next();

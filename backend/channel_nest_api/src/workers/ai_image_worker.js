@@ -78,6 +78,32 @@ function sequenceNumbers(count) {
   return Array.from({ length: count }, (_, index) => index + 1);
 }
 
+async function cleanupBoundReferences(requestId, references, root) {
+  if (!references.length) return;
+  const now = new Date();
+  for (const reference of references) {
+    try {
+      if (reference.relative_path) {
+        const target = path.resolve(root, reference.relative_path);
+        if (target.startsWith(`${root}${path.sep}`)) {
+          await fs.promises.rm(target, { force: true });
+        }
+      }
+      await AiReferenceInput.update({
+        status: 'deleted',
+        relative_path: null,
+        deleted_at: now,
+      }, { where: { id: reference.id, status: 'bound' } });
+    } catch (error) {
+      logger.warn(`AI image reference cleanup failed: ${JSON.stringify({
+        taskId: requestId,
+        referenceId: reference.id,
+        message: error.message,
+      })}`);
+    }
+  }
+}
+
 async function resolveCardPlans(request, payload) {
   const plannerInput = {
     userId: request.user_id,
@@ -260,14 +286,15 @@ class AiImageWorker {
     const startedAt = Date.now();
     let totalCost = 0;
     let failureCode = null;
+    let boundReferences = [];
+    const root = path.resolve(config.ai_temp_storage.path);
     const stopHeartbeat = startHeartbeat(request.id);
 
     try {
-      const references = (await AiReferenceInput.findAll({
+      boundReferences = (await AiReferenceInput.findAll({
         where: { request_id: request.id, status: 'bound' }, order: [['created_at', 'ASC']],
       })).map(plain);
-      const root = path.resolve(config.ai_temp_storage.path);
-      const referencePaths = references.map((item) => path.resolve(root, item.relative_path));
+      const referencePaths = boundReferences.map((item) => path.resolve(root, item.relative_path));
       const dimensions = resolveDimensions(request.resolution, request.aspect_ratio);
       const providerImageSize = providerSize(request.resolution, request.aspect_ratio);
       const providerQuality = Catalog.resolutions[request.resolution].providerOptions.quality;
@@ -275,7 +302,7 @@ class AiImageWorker {
       const context = {
         request,
         payload,
-        references,
+        references: boundReferences,
         referencePaths,
         dimensions,
         providerImageSize,
@@ -354,6 +381,7 @@ class AiImageWorker {
       });
     } finally {
       stopHeartbeat();
+      await cleanupBoundReferences(request.id, boundReferences, root);
     }
 
     return true;

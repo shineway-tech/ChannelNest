@@ -1,7 +1,7 @@
 const Router = require('koa-router');
 const { koaBody } = require('koa-body');
 const controller = require('./ai');
-const { checkImages, checkText } = require('./filter');
+const { checkImagePromptOptimize, checkImages, checkText } = require('./filter');
 const requireRegisteredUser = require('../../../middlewares/require_registered_user');
 
 const router = new Router();
@@ -16,6 +16,7 @@ router.post('/text/stream', access, checkText, controller.textStream);
 router.get('/image-options', access, controller.imageOptions);
 router.post('/image-references', access, multipart, controller.uploadReference);
 router.delete('/image-references/:reference_id', access, controller.deleteReference);
+router.post('/image-prompt/optimize', access, checkImagePromptOptimize, controller.optimizeImagePrompt);
 router.post('/images', access, checkImages, controller.images);
 router.get('/requests/:request_id', access, controller.request);
 router.get('/requests/:request_id/outputs/:output_id', access, controller.output);

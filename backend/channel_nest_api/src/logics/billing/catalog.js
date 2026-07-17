@@ -23,7 +23,7 @@ const LedgerSourceFilters = {
   signup: 'signup_gift',
   membership: { [Op.in]: ['membership_gift', 'membership_upgrade_gift'] },
   recharge: 'recharge',
-  ai_text: 'ai_text',
+  ai_text: { [Op.in]: ['ai_text', 'ai_prompt_optimize'] },
   ai_image: { [Op.like]: 'ai_image_%' },
 };
 

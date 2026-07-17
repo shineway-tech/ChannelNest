@@ -5,6 +5,40 @@ export function releaseHistoryForLanguage(language: LanguageMode): ReleaseHistor
   if (language === "en") {
     return [
       {
+        version: "1.1.1",
+        date: "2026.07.17",
+        icon: "spark",
+        sections: [
+          {
+            icon: "spark",
+            title: "Content Generation",
+            items: [
+              "Added AI prompt optimization for image generation, charging 2 points per optimization and keeping the selected image controls in the optimization brief",
+              "Improved image generation task handling with clearer generated states, reference image cleanup, and generated image saving into the local resource library",
+              "Refined image prompt controls, default image type, color options, and resource selection behavior for publishing",
+            ],
+          },
+          {
+            icon: "wallet",
+            title: "Payments and Account Center",
+            items: [
+              "Improved the Alipay checkout dialog so the QR code is fully visible and centered on Windows",
+              "Refined membership, point ledger, and order history presentation with clearer filtering and pagination",
+              "Improved user-facing error prompts for unavailable services and checkout failures",
+            ],
+          },
+          {
+            icon: "settings",
+            title: "Stability and Polish",
+            items: [
+              "Fixed reference image removal and stale uploaded reference cleanup after image tasks start",
+              "Improved layout stability for image resources, publish media spacing, and light theme publish controls",
+              "Optimized several content generation and publishing UI details for a tighter desktop layout",
+            ],
+          },
+        ],
+      },
+      {
         version: "1.1.0",
         date: "2026.07.16",
         icon: "spark",
@@ -108,6 +142,40 @@ export function releaseHistoryForLanguage(language: LanguageMode): ReleaseHistor
   }
 
   return [
+    {
+      version: "1.1.1",
+      date: "2026.07.17",
+      icon: "spark",
+      sections: [
+        {
+          icon: "spark",
+          title: "内容生成",
+          items: [
+            "新增图片生成的 AI 提示词优化能力，每次优化消耗 2 积分，并结合当前图片类型、画幅、风格、布局、配色和参考图设置生成更可用的提示词",
+            "优化图片生成任务处理，完善生成中状态、参考图清理和生成图片加入本地资源库流程",
+            "优化图片提示词控件、默认图片类型、配色选项和发布时从资源库选择内容的体验",
+          ],
+        },
+        {
+          icon: "wallet",
+          title: "支付与会员中心",
+          items: [
+            "优化支付宝扫码支付弹窗，在 Windows 上二维码可以完整显示并保持居中",
+            "优化会员、积分记录和订单记录展示，筛选与分页更清晰",
+            "完善服务不可用、配置异常和支付失败时的用户提示",
+          ],
+        },
+        {
+          icon: "settings",
+          title: "稳定性与细节",
+          items: [
+            "修复图片参考图无法删除和图片任务开始后参考图残留的问题",
+            "优化图片资源列表、发布素材间距和浅色模式下的发布控件样式",
+            "整理内容生成与发布相关界面，让桌面端布局更紧凑稳定",
+          ],
+        },
+      ],
+    },
     {
       version: "1.1.0",
       date: "2026.07.16",

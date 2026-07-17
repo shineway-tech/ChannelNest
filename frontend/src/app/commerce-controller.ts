@@ -115,6 +115,8 @@ export class CommerceController {
   private set textError(value: string) { this.generation.textError = value; }
   private get imageDraft() { return this.generation.imageDraft; }
   private set imageDraft(value: ReturnType<typeof defaultImageDraft>) { this.generation.imageDraft = value; }
+  private get imagePromptOptimizing() { return this.generation.imagePromptOptimizing; }
+  private set imagePromptOptimizing(value: boolean) { this.generation.imagePromptOptimizing = value; }
   private get referenceImages() { return this.generation.referenceImages; }
   private set referenceImages(value: ImageReference[]) { this.generation.referenceImages = value; }
   private get imageRequest() { return this.generation.imageRequest; }
@@ -180,6 +182,7 @@ export class CommerceController {
       textResult: this.textResult,
       textError: this.textError,
       imageDraft: this.imageDraft,
+      imagePromptOptimizing: this.imagePromptOptimizing,
       referenceImages: this.referenceImages,
       imageRequest: this.imageRequest,
       imageError: this.imageError,
@@ -385,6 +388,10 @@ export class CommerceController {
     document.querySelector<HTMLFormElement>("[data-ai-image-form]")?.addEventListener("submit", (event) => {
       event.preventDefault();
       if (event.currentTarget instanceof HTMLFormElement) void this.generateImages(event.currentTarget);
+    });
+    document.querySelector<HTMLElement>("[data-ai-optimize-image-prompt]")?.addEventListener("click", () => {
+      const imageForm = document.querySelector<HTMLFormElement>("[data-ai-image-form]");
+      if (imageForm) void this.optimizeImagePrompt(imageForm);
     });
     document.querySelector<HTMLSelectElement>("[data-ai-asset-type]")?.addEventListener("change", (event) => {
       if (!this.imageOptions || !(event.currentTarget instanceof HTMLSelectElement)) return;
@@ -823,15 +830,55 @@ export class CommerceController {
 
   private async removeReference(referenceId: string) {
     if (this.busy || !this.referenceImages.some((reference) => reference.id === referenceId)) return;
-    this.busy = true;
+    this.referenceImages = removeImageReference(this.referenceImages, referenceId);
     this.deps.renderPreservingScroll();
     try {
       await this.deps.apiRequest(`/v1/ai/image-references/${referenceId}`, { method: "DELETE" });
-      this.referenceImages = removeImageReference(this.referenceImages, referenceId);
+    } catch (error) {
+      console.warn("Failed to remove uploaded image reference from server", error);
+    }
+  }
+
+  private async optimizeImagePrompt(form: HTMLFormElement) {
+    if (this.busy || this.imagePromptOptimizing) return;
+    this.captureImageDraft(form);
+    if (!this.imageDraft.prompt.trim()) {
+      this.deps.showToast(this.getText().imagePromptRequired);
+      return;
+    }
+
+    this.imagePromptOptimizing = true;
+    this.deps.renderPreservingScroll();
+    try {
+      const result = await this.deps.apiRequest<{ optimizedPrompt: string }>(
+        "/v1/ai/image-prompt/optimize",
+        {
+          method: "POST",
+          body: {
+            client_request_id: crypto.randomUUID(),
+            asset_type: this.imageDraft.assetType,
+            prompt: this.imageDraft.prompt,
+            aspect_ratio: this.imageDraft.aspectRatio,
+            language: this.deps.getLanguage(),
+            style: this.imageDraft.style,
+            layout: this.imageDraft.layout,
+            palette: this.imageDraft.palette,
+            preset: this.imageDraft.preset,
+            reference_mode: this.imageDraft.referenceMode,
+            reference_count: this.referenceImages.length,
+          },
+        },
+      );
+      const optimizedPrompt = result.optimizedPrompt.trim();
+      if (optimizedPrompt) {
+        this.imageDraft.prompt = optimizedPrompt.slice(0, 2000);
+        this.deps.showToast(this.getText().imagePromptOptimized);
+      }
+      await this.refreshBilling(false);
     } catch (error) {
       this.deps.showToast(this.normalizeError(error));
     } finally {
-      this.busy = false;
+      this.imagePromptOptimizing = false;
       this.deps.renderPreservingScroll();
     }
   }
@@ -862,6 +909,10 @@ export class CommerceController {
           reference_mode: this.imageDraft.referenceMode,
         },
       });
+      if (this.referenceImages.length) {
+        releaseImageReferences(this.referenceImages);
+        this.referenceImages = [];
+      }
       this.imageRequest = {
         requestId: result.requestId,
         status: "pending",

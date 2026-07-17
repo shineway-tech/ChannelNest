@@ -21,6 +21,10 @@ const {
   buildTextContent,
   buildTextInstructions,
 } = require('../services/text_prompt_builder');
+const {
+  buildImagePromptOptimizeContent,
+  buildImagePromptOptimizeInstructions,
+} = require('../services/image_prompt_optimizer');
 const BusinessError = require('../utils/business_error');
 const ErrorCodes = require('../utils/error_codes');
 const { sha256 } = require('../utils/security');
@@ -214,6 +218,157 @@ class AiLogic {
     return {
       requestId,
       content: result.text,
+      chargedMicros: String(TextPriceMicros),
+      wallet,
+    };
+  }
+
+  static async optimizeImagePrompt(userId, entries) {
+    AiLogic.ensureConfigured();
+    await EntitlementLogic.require(userId, 'ai.text');
+    const existing = plain(await AiRequest.findOne({
+      where: { user_id: userId, client_request_id: entries.client_request_id },
+    }));
+    if (existing) {
+      return {
+        requestId: existing.id,
+        optimizedPrompt: '',
+        chargedMicros: String(existing.charged_micros || 0),
+        wallet: null,
+      };
+    }
+
+    const requestId = crypto.randomUUID();
+    let hold;
+    await sequelize.transaction(async (transaction) => {
+      hold = await PointWallet.freeze({
+        userId,
+        businessType: 'ai_prompt_optimize',
+        businessId: requestId,
+        amountMicros: TextPriceMicros,
+        expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+      }, transaction);
+      await AiRequest.create({
+        id: requestId,
+        user_id: userId,
+        client_request_id: entries.client_request_id,
+        request_type: 'text',
+        task_type: 'image_prompt_optimize',
+        asset_type: entries.asset_type,
+        style_code: entries.style || 'auto',
+        layout_code: entries.layout || 'auto',
+        palette_code: entries.palette || 'auto',
+        preset_code: entries.preset || 'auto',
+        reference_count: Number(entries.reference_count || 0),
+        aspect_ratio: entries.aspect_ratio,
+        requested_count: 1,
+        success_count: 0,
+        failed_count: 0,
+        status: 'processing',
+        hold_id: hold.id,
+        charged_micros: 0,
+        provider: config.openai.text.provider,
+        provider_model: config.openai.text.model,
+        provider_cost_micros_usd: 0,
+        input_length: entries.prompt.length,
+        output_length: 0,
+        started_at: new Date(),
+      }, { transaction });
+    });
+
+    const startedAt = Date.now();
+    const callId = await AiLifecycle.recordProviderCallStart({
+      requestId,
+      provider: config.openai.text.provider,
+      operation: config.openai.text.api === 'chat_completions' ? 'chat' : 'responses',
+      model: config.openai.text.model,
+      promptVersion: `${config.openai.text.prompt_version}:image-prompt-optimize-v1`,
+    });
+
+    const failRequest = async (errorCode, attempts = 1) => {
+      await AiLifecycle.failTextRequest({
+        requestId,
+        holdId: hold.id,
+        callId,
+        errorCode,
+        attempts,
+        startedAt,
+      });
+    };
+    let result;
+
+    try {
+      result = await OpenAIService.createText({
+        userId,
+        instructions: buildImagePromptOptimizeInstructions(entries),
+        content: buildImagePromptOptimizeContent(entries),
+      });
+      result.text = result.text.trim();
+      if (!result.text) throw new Error('Empty model response');
+    } catch (error) {
+      const details = OpenAIService.providerErrorDetails(error);
+      const errorCode = details.kind === 'provider_error'
+        ? details.kind : `provider_${details.kind}`;
+      logger.warn(`OpenAI image prompt optimization failed: ${JSON.stringify({
+        requestId,
+        ...details,
+      })}`);
+      await failRequest(errorCode, details.attempts);
+      throw new BusinessError(
+        503,
+        ErrorCodes.AI_UNAVAILABLE,
+        OpenAIService.providerErrorMessage(error),
+      );
+    }
+
+    try {
+      const completedAt = new Date();
+      await sequelize.transaction(async (transaction) => {
+        await PointWallet.settle(hold.id, TextPriceMicros, transaction);
+        await AiLifecycle.completeProviderCall(callId, result, startedAt, transaction);
+        await AiRequest.update({
+          status: 'succeeded',
+          success_count: 1,
+          charged_micros: TextPriceMicros,
+          provider_model: result.model,
+          provider_cost_micros_usd: result.costMicrosUsd,
+          output_length: result.text.length,
+          latency_ms: Date.now() - startedAt,
+          completed_at: completedAt,
+        }, { where: { id: requestId }, transaction });
+      });
+    } catch (error) {
+      const validation = Array.isArray(error.errors)
+        ? error.errors.map((item) => ({
+          type: item.type,
+          path: item.path,
+          validatorKey: item.validatorKey,
+          message: item.message,
+        }))
+        : [];
+      logger.error(`Failed to settle AI image prompt optimization (${requestId}): ${JSON.stringify({
+        name: error.name,
+        code: error.original?.code,
+        message: error.message,
+        validation,
+      })}`);
+      await failRequest('result_processing_error', result.attempts);
+      throw new BusinessError(
+        503,
+        ErrorCodes.AI_UNAVAILABLE,
+        '提示词优化结果处理失败，积分未扣除，请稍后重试',
+      );
+    }
+
+    let wallet = null;
+    try {
+      wallet = await PointWallet.balance(userId);
+    } catch (error) {
+      logger.warn(`Failed to read AI prompt optimization wallet balance (${requestId}): ${error.message}`);
+    }
+    return {
+      requestId,
+      optimizedPrompt: result.text,
       chargedMicros: String(TextPriceMicros),
       wallet,
     };
