@@ -33,7 +33,7 @@ import {
 } from "../utils/image-task";
 import { defaultImageDraft, normalizeImageDraftForAssetType } from "../utils/image-options";
 import {
-  saveGeneratedImageOutput,
+  saveGeneratedImageOutputFromUrl,
   saveGeneratedImageToDownloads,
 } from "../utils/generated-image-store";
 import {
@@ -46,7 +46,6 @@ import {
 interface CommerceControllerDependencies {
   apiRequest: ApiRequest;
   apiStreamRequest: ApiStreamRequest;
-  apiRequestBlob: (path: string) => Promise<Blob>;
   getLanguage: () => "zh" | "en";
   getCurrentUserId: () => string;
   render: () => void;
@@ -966,38 +965,32 @@ export class CommerceController {
     request.outputs.forEach((output) => {
       if (this.imageUrls[output.id] || this.imageOutputDownloads.has(output.id)) return;
       this.imageOutputDownloads.add(output.id);
-      void this.deps.apiRequestBlob(output.downloadPath)
-        .then(async (blob) => {
-          let shouldAckServerFile = false;
-          let url = "";
-          try {
-            const saved = await saveGeneratedImageOutput(request.requestId, output, blob);
-            url = saved.url;
-            this.imageLocalFiles[output.id] = saved;
-            shouldAckServerFile = true;
-          } catch (error) {
-            console.warn("Failed to save generated image output locally", error);
-            url = URL.createObjectURL(blob);
-            this.imageObjectUrls.add(url);
-          }
-
-          if (this.imageRequest?.requestId === request.requestId) {
-            this.imageUrls[output.id] = url;
-            this.deps.renderPreservingScroll();
-          } else {
-            this.releaseGeneratedImageUrl(url);
-          }
-          if (shouldAckServerFile) {
-            await this.ackImageOutput(request.requestId, output.id);
-          }
-        })
+      void this.saveImageOutputLocally(request, output)
         .catch((error) => {
           console.warn("Failed to load generated image output", error);
+          this.deps.showToast(this.deps.normalizeError(error));
         })
         .finally(() => {
           this.imageOutputDownloads.delete(output.id);
       });
     });
+  }
+
+  private async saveImageOutputLocally(request: AiRequestStatus, output: AiRequestStatus["outputs"][number]) {
+    if (!output.downloadUrl) {
+      throw new Error("图片下载地址不可用，请稍后重试");
+    }
+    const saved = await saveGeneratedImageOutputFromUrl(request.requestId, output, output.downloadUrl);
+    const url = saved.url;
+    this.imageLocalFiles[output.id] = saved;
+
+    if (this.imageRequest?.requestId === request.requestId) {
+      this.imageUrls[output.id] = url;
+      this.deps.renderPreservingScroll();
+    } else {
+      this.releaseGeneratedImageUrl(url);
+    }
+    await this.ackImageOutput(request.requestId, output.id);
   }
 
   private async ackImageOutput(requestId: string, outputId: string) {

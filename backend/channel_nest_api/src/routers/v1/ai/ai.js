@@ -1,4 +1,3 @@
-const fs = require('fs');
 const { PassThrough } = require('stream');
 const { logger } = require('@honeykid/ml');
 const AiLogic = require('../../../logics/ai');
@@ -68,17 +67,6 @@ class AiController {
   async request(ctx, next) {
     ctx.setData(await AiLogic.request(ctx.state.auth_user.id, ctx.params.request_id));
     await next();
-  }
-
-  async output(ctx) {
-    const output = await AiLogic.output(
-      ctx.state.auth_user.id,
-      ctx.params.request_id,
-      ctx.params.output_id,
-    );
-    ctx.type = output.mimeType;
-    ctx.attachment(output.filename);
-    ctx.body = fs.createReadStream(output.filePath);
   }
 
   async ack(ctx, next) {

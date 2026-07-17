@@ -62,7 +62,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            commands::ai::save_generated_image_output,
+            commands::ai::save_generated_image_output_from_url,
             commands::ai::save_generated_image_to_downloads,
             commands::resource::create_local_resource,
             commands::resource::list_local_resources,

@@ -15,9 +15,18 @@ const {
   UserMessage,
 } = require('../models/domain');
 const PointWallet = require('../logics/point_wallet');
+const OssTempStorage = require('../services/oss_temp_storage');
 const config = require('../../config');
 
-async function removeRelative(relativePath) {
+async function removeOssObject(relativePath) {
+  if (!relativePath) return;
+  const objectKey = OssTempStorage.parseStoredPath(relativePath);
+  if (objectKey && OssTempStorage.enabled()) {
+    await OssTempStorage.deleteObject(objectKey);
+  }
+}
+
+async function removeLocalReference(relativePath) {
   if (!relativePath) return;
   const root = path.resolve(config.ai_temp_storage.path);
   const target = path.resolve(root, relativePath);
@@ -38,14 +47,16 @@ class MaintenanceWorker {
       where: { status: 'ready', expires_at: { [Op.lte]: now } }, limit: 100,
     });
     for (const output of outputs) {
-      await removeRelative(output.relative_path);
-      await output.update({ status: 'expired', relative_path: '', deleted_at: now });
+      await removeOssObject(output.relative_path);
+      await output.update({
+        status: 'expired', relative_path: '', deleted_at: now,
+      });
     }
     const references = await AiReferenceInput.findAll({
       where: { status: 'uploaded', expires_at: { [Op.lte]: now } }, limit: 100,
     });
     for (const reference of references) {
-      await removeRelative(reference.relative_path);
+      await removeLocalReference(reference.relative_path);
       await reference.update({ status: 'expired', relative_path: null, deleted_at: now });
     }
     const payloads = await AiRequestPayload.findAll({

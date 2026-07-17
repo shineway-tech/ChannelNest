@@ -58,6 +58,15 @@ async function downloadProviderImage(url) {
     invalid.code = 'provider_image_url_invalid';
     throw invalid;
   }
+  if (parsed.protocol === 'data:') {
+    const match = /^data:image\/[a-zA-Z0-9.+-]+;base64,(.+)$/s.exec(url);
+    if (!match) {
+      const invalid = new Error('Image provider returned an invalid data URL');
+      invalid.code = 'provider_image_url_invalid';
+      throw invalid;
+    }
+    return Buffer.from(match[1], 'base64');
+  }
   if (parsed.protocol !== 'https:') {
     const insecure = new Error('Image provider returned an insecure image URL');
     insecure.code = 'provider_image_url_insecure';
@@ -93,6 +102,7 @@ function buildImageRequestPayload(input, imageConfig = config.openai.image) {
       payload[key] = imageConfig[key];
     }
   });
+  if (imageConfig.response_format) payload.response_format = imageConfig.response_format;
   return payload;
 }
 

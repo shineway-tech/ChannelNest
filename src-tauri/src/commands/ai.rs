@@ -1,4 +1,3 @@
-use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
@@ -6,11 +5,11 @@ use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct SaveGeneratedImageRequest {
+pub(crate) struct SaveGeneratedImageFromUrlRequest {
     request_id: String,
     output_id: String,
     sequence_no: u32,
-    image_base64: String,
+    download_url: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -33,9 +32,9 @@ pub(crate) struct SaveGeneratedImageToDownloadsResponse {
 }
 
 #[tauri::command]
-pub(crate) async fn save_generated_image_output(
+pub(crate) async fn save_generated_image_output_from_url(
     app: AppHandle,
-    request: SaveGeneratedImageRequest,
+    request: SaveGeneratedImageFromUrlRequest,
 ) -> Result<SaveGeneratedImageResponse, String> {
     let request_id = Uuid::parse_str(&request.request_id)
         .map_err(|_| "生成任务编号无效".to_string())?
@@ -46,13 +45,31 @@ pub(crate) async fn save_generated_image_output(
     if request.sequence_no == 0 || request.sequence_no > 9999 {
         return Err("图片序号无效".to_string());
     }
-    if request.image_base64.len() > 80 * 1024 * 1024 {
-        return Err("图片文件过大".to_string());
+    let url = reqwest::Url::parse(&request.download_url)
+        .map_err(|_| "图片下载地址无效".to_string())?;
+    if url.scheme() != "https" {
+        return Err("图片下载地址无效".to_string());
     }
 
-    let bytes = general_purpose::STANDARD
-        .decode(request.image_base64)
-        .map_err(|_| "图片数据无效".to_string())?;
+    let response = reqwest::Client::new()
+        .get(url)
+        .send()
+        .await
+        .map_err(|_| "图片下载失败".to_string())?;
+    if !response.status().is_success() {
+        return Err("图片下载失败".to_string());
+    }
+    if response
+        .content_length()
+        .map(|length| length > 60 * 1024 * 1024)
+        .unwrap_or(false)
+    {
+        return Err("图片文件过大".to_string());
+    }
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|_| "图片下载失败".to_string())?;
     if bytes.is_empty() || bytes.len() > 60 * 1024 * 1024 {
         return Err("图片文件大小无效".to_string());
     }

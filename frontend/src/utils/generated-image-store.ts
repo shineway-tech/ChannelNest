@@ -21,28 +21,18 @@ export function generatedImageFileName(output: Pick<ImageOutput, "id" | "sequenc
   return `${output.sequenceNo}-${safeFileSegment(output.id)}.jpg`;
 }
 
-export async function blobToBase64(blob: Blob) {
-  const bytes = new Uint8Array(await blob.arrayBuffer());
-  const chunkSize = 0x8000;
-  let binary = "";
-  for (let index = 0; index < bytes.length; index += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
-  }
-  return btoa(binary);
-}
-
-export async function saveGeneratedImageOutput(
+export async function saveGeneratedImageOutputFromUrl(
   requestId: string,
   output: ImageOutput,
-  blob: Blob,
+  downloadUrl: string,
   invokeFn: InvokeFn = invoke,
 ) {
-  const result = await invokeFn<SaveGeneratedImageResponse>("save_generated_image_output", {
+  const result = await invokeFn<SaveGeneratedImageResponse>("save_generated_image_output_from_url", {
     request: {
       requestId,
       outputId: output.id,
       sequenceNo: output.sequenceNo,
-      imageBase64: await blobToBase64(blob),
+      downloadUrl,
     },
   });
 

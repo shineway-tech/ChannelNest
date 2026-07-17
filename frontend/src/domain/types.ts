@@ -203,7 +203,7 @@ export interface AiRequestStatus {
     width: number;
     height: number;
     byteSize: string;
-    downloadPath: string;
+    downloadUrl?: string | null;
   }>;
 }
 

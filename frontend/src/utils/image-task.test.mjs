@@ -63,7 +63,7 @@ test("builds progressive image result slots before the whole task finishes", () 
         width: 768,
         height: 1024,
         byteSize: "123",
-        downloadPath: "/v1/ai/requests/request-1/outputs/output-1",
+        downloadUrl: "https://example.com/output-1.jpg",
       },
     ],
   });

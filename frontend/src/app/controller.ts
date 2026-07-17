@@ -4,7 +4,6 @@ import { copy } from "../i18n/copy";
 import { renderReleasesPage } from "../pages/releases";
 import {
   requestApi,
-  requestApiBlob,
   requestApiStream,
   type ApiRequestOptions,
   type ApiStreamRequestOptions,
@@ -67,7 +66,6 @@ const publishController = new PublishController({
 const commerceController = new CommerceController({
   apiRequest,
   apiStreamRequest,
-  apiRequestBlob: (path) => requestApiBlob(API_BASE_URL, path, authToken),
   getLanguage: () => language,
   getCurrentUserId: () => currentUser?.id || "",
   render: () => render(),

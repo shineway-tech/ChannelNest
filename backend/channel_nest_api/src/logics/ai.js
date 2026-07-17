@@ -17,6 +17,7 @@ const OpenAIService = require('../services/openai');
 const { Catalog } = require('../services/image_prompt_catalog');
 const { resolveDimensions } = require('../services/image_dimensions');
 const { ackImageOutputFile } = require('../services/image_output_cleanup');
+const OssTempStorage = require('../services/oss_temp_storage');
 const {
   buildTextContent,
   buildTextInstructions,
@@ -58,17 +59,20 @@ function publicRequest(request, outputs = []) {
     preset: request.preset_code,
     errorCode: request.error_code,
     completedAt: request.completed_at,
-    outputs: outputs.map((output) => ({
-      id: output.id,
-      status: output.status,
-      sequenceNo: output.sequence_no,
-      width: output.width,
-      height: output.height,
-      byteSize: String(output.byte_size),
-      sha256: output.sha256,
-      expiresAt: output.expires_at,
-      downloadPath: `/v1/ai/requests/${request.id}/outputs/${output.id}`,
-    })),
+    outputs: outputs.map((output) => {
+      const objectKey = OssTempStorage.parseStoredPath(output.relative_path);
+      return {
+        id: output.id,
+        status: output.status,
+        sequenceNo: output.sequence_no,
+        width: output.width,
+        height: output.height,
+        byteSize: String(output.byte_size),
+        sha256: output.sha256,
+        expiresAt: output.expires_at,
+        downloadUrl: objectKey ? OssTempStorage.signedUrl(objectKey) : null,
+      };
+    }),
   };
 }
 
@@ -491,31 +495,12 @@ class AiLogic {
     return publicRequest(request, outputs);
   }
 
-  static async output(userId, requestId, outputId) {
-    const request = await AiRequest.findOne({ where: { id: requestId, user_id: userId } });
-    const output = plain(await AiOutput.findOne({
-      where: { id: outputId, request_id: requestId },
-    }));
-    if (!request || !output || !output.relative_path
-      || !['ready', 'downloaded'].includes(output.status)) {
-      throw new NotFoundError('图片不存在或已过期');
-    }
-    const root = path.resolve(config.ai_temp_storage.path);
-    const filePath = path.resolve(root, output.relative_path);
-    if (!filePath.startsWith(`${root}${path.sep}`) || !fs.existsSync(filePath)) {
-      throw new NotFoundError('图片文件已过期');
-    }
-
-    return { filePath, mimeType: output.mime_type, filename: `${output.id}.jpg` };
-  }
-
   static async ack(userId, requestId) {
     const request = await AiRequest.findOne({ where: { id: requestId, user_id: userId } });
     if (!request) throw new NotFoundError('生成任务不存在');
     const outputs = await AiOutput.findAll({ where: { request_id: requestId, status: 'ready' } });
-    const root = path.resolve(config.ai_temp_storage.path);
     for (const output of outputs) {
-      await ackImageOutputFile(output, root);
+      await ackImageOutputFile(output);
     }
 
     return { acknowledged: true };
@@ -530,7 +515,7 @@ class AiLogic {
       throw new NotFoundError('图片不存在或已过期');
     }
     if (output.status === 'ready') {
-      await ackImageOutputFile(output, path.resolve(config.ai_temp_storage.path));
+      await ackImageOutputFile(output);
     }
 
     return { acknowledged: true };

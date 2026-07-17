@@ -19,7 +19,6 @@ router.delete('/image-references/:reference_id', access, controller.deleteRefere
 router.post('/image-prompt/optimize', access, checkImagePromptOptimize, controller.optimizeImagePrompt);
 router.post('/images', access, checkImages, controller.images);
 router.get('/requests/:request_id', access, controller.request);
-router.get('/requests/:request_id/outputs/:output_id', access, controller.output);
 router.post('/requests/:request_id/outputs/:output_id/ack', access, controller.ackOutput);
 router.post('/requests/:request_id/ack', access, controller.ack);
 

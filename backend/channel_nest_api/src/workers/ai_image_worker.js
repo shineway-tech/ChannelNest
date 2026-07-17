@@ -15,6 +15,7 @@ const { buildImagePrompt } = require('../services/image_prompt_builder');
 const { fallbackCardPlans, planImageCards } = require('../services/image_card_planner');
 const { Catalog } = require('../services/image_prompt_catalog');
 const { providerSize, resolveDimensions } = require('../services/image_dimensions');
+const OssTempStorage = require('../services/oss_temp_storage');
 const { withImageRetries } = require('../services/image_retry');
 const OpenAIService = require('../services/openai');
 const { sha256 } = require('../utils/security');
@@ -187,16 +188,23 @@ async function processSequence(context, sequenceNo) {
       maxRetries: config.openai.image.application_max_retries,
       classifyError: OpenAIService.providerErrorDetails,
     });
-    const relativePath = path.join('outputs', request.user_id, request.id, `${sequenceNo}.jpg`);
-    const outputPath = path.resolve(root, relativePath);
-    await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
-    await sharp(result.buffer)
+    const outputBuffer = await sharp(result.buffer)
       .resize(dimensions.width, dimensions.height, { fit: 'cover' })
       .jpeg({ quality: config.openai.image.output_compression })
-      .toFile(outputPath);
-    const outputBuffer = await fs.promises.readFile(outputPath);
+      .toBuffer();
+    if (!OssTempStorage.enabled()) {
+      throw new Error('AI image OSS temp storage is not configured');
+    }
+    const outputId = crypto.randomUUID();
+    const key = OssTempStorage.objectKey({
+      userId: request.user_id,
+      requestId: request.id,
+      outputId,
+    });
+    await OssTempStorage.putObject(key, outputBuffer, 'image/jpeg');
+    const relativePath = OssTempStorage.storedPath(key);
     const output = await AiOutput.create({
-      id: crypto.randomUUID(),
+      id: outputId,
       request_id: request.id,
       sequence_no: sequenceNo,
       status: 'ready',

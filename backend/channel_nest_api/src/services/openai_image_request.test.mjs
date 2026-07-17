@@ -16,6 +16,7 @@ test('builds OpenAI native image request payload with configured image options',
     moderation: 'auto',
     background: 'opaque',
     output_format: 'jpeg',
+    response_format: 'url',
   });
 
   assert.deepEqual(payload, {
@@ -27,5 +28,6 @@ test('builds OpenAI native image request payload with configured image options',
     moderation: 'auto',
     background: 'opaque',
     output_format: 'jpeg',
+    response_format: 'url',
   });
 });

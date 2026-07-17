@@ -36,9 +36,9 @@ const defaultConfig = {
   desktop_update: {
     enabled: true,
     release_token: '',
-    latest_version: '1.1.0',
+    latest_version: '1.1.2',
     pub_date: '2026-07-16T00:00:00Z',
-    notes: '新增会员与积分中心、支付宝网站支付、邮箱验证码注册登录、消息中心；接入内容生成能力，支持文案流式生成、AI 图片生成、宝玉图片提示词体系和生成结果加入资源库；优化发布流程，支持从资源库选择文案/图片并改进多平台图文发布、定时发布、可见范围和资源列表稳定性。',
+    notes: '1.1.2：优化 AI 图片生成结果分发，生成图片改为 OSS 临时文件直传客户端；客户端下载成功后自动 ack 并删除 OSS 临时图片；移除业务服务器本地图片输出下载链路，降低服务器带宽占用并提升失败提示。',
     manifest_path: 'storage/desktop-update-manifest.json',
     download_dir: 'public/desktop-updates',
     platforms: {},
@@ -101,6 +101,7 @@ const defaultConfig = {
       moderation: 'auto',
       background: 'opaque',
       output_format: 'jpeg',
+      response_format: 'url',
       output_compression: 90,
       images_per_provider_call: 1,
       timeout_ms: 840000,
@@ -144,6 +145,17 @@ const defaultConfig = {
   ai_temp_storage: {
     path: '/tmp/market_tool',
     ttl_seconds: 3600,
+    oss: {
+      enabled: false,
+      region: '',
+      bucket: '',
+      access_key_id: '',
+      access_key_secret: '',
+      internal_endpoint: '',
+      public_endpoint: '',
+      prefix: 'tmp/channel-nest/ai-images',
+      signed_url_ttl_seconds: 900,
+    },
   },
   dingtalk: {
     token: '',

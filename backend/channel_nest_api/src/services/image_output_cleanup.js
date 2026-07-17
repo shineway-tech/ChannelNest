@@ -1,17 +1,9 @@
-const fs = require('fs');
-const path = require('path');
+const OssTempStorage = require('./oss_temp_storage');
 
-function safeTempFilePath(root, relativePath) {
-  if (!relativePath) return null;
-  const resolvedRoot = path.resolve(root);
-  const filePath = path.resolve(resolvedRoot, relativePath);
-  return filePath.startsWith(`${resolvedRoot}${path.sep}`) ? filePath : null;
-}
-
-async function ackImageOutputFile(output, root) {
-  const filePath = safeTempFilePath(root, output.relative_path);
-  if (filePath) {
-    await fs.promises.rm(filePath, { force: true });
+async function ackImageOutputFile(output) {
+  const objectKey = OssTempStorage.parseStoredPath(output.relative_path);
+  if (objectKey && OssTempStorage.enabled()) {
+    await OssTempStorage.deleteObject(objectKey);
   }
   await output.update({
     status: 'downloaded',
@@ -23,5 +15,4 @@ async function ackImageOutputFile(output, root) {
 
 module.exports = {
   ackImageOutputFile,
-  safeTempFilePath,
 };

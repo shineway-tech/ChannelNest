@@ -72,22 +72,6 @@ export async function requestApi<T>(
   return payload.data;
 }
 
-export async function requestApiBlob(
-  baseUrl: string,
-  path: string,
-  token: string,
-) {
-  const response = await fetch(`${baseUrl}${path}`, {
-    headers: token ? { "X-Token": token } : {},
-  });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => null) as ApiResponse<unknown> | null;
-    throw new ApiError(payload?.err_msg || `HTTP ${response.status}`, response.status, payload?.err_code || 0);
-  }
-
-  return response.blob();
-}
-
 export async function requestApiStream<T>(
   baseUrl: string,
   path: string,
