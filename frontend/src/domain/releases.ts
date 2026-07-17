@@ -5,6 +5,36 @@ export function releaseHistoryForLanguage(language: LanguageMode): ReleaseHistor
   if (language === "en") {
     return [
       {
+        version: "1.1.3",
+        date: "2026.07.17",
+        icon: "settings",
+        sections: [
+          {
+            icon: "settings",
+            title: "Desktop Update",
+            items: [
+              "Fixed macOS platform icons appearing washed out on some Apple Silicon devices by adding a CSS fallback for older WebView rendering",
+              "Rebuilt the macOS updater archive from the notarized DMG app so automatic updates keep valid Apple signing metadata",
+            ],
+          },
+        ],
+      },
+      {
+        version: "1.1.2",
+        date: "2026.07.17",
+        icon: "download",
+        sections: [
+          {
+            icon: "download",
+            title: "Image Delivery",
+            items: [
+              "Moved generated image delivery to temporary OSS files to reduce pressure on the application server bandwidth",
+              "Removed the previous server-storage download path and added client acknowledgement cleanup for temporary image files",
+            ],
+          },
+        ],
+      },
+      {
         version: "1.1.1",
         date: "2026.07.17",
         icon: "spark",
@@ -142,6 +172,36 @@ export function releaseHistoryForLanguage(language: LanguageMode): ReleaseHistor
   }
 
   return [
+    {
+      version: "1.1.3",
+      date: "2026.07.17",
+      icon: "settings",
+      sections: [
+        {
+          icon: "settings",
+          title: "桌面端更新",
+          items: [
+            "修复部分 Apple Silicon 设备上平台图标发白、模糊的问题，为旧版 WebView 增加 CSS 背景兜底",
+            "从已公证的 DMG 应用重新生成 macOS 自动更新包，避免更新包丢失 Apple 签名元数据",
+          ],
+        },
+      ],
+    },
+    {
+      version: "1.1.2",
+      date: "2026.07.17",
+      icon: "download",
+      sections: [
+        {
+          icon: "download",
+          title: "图片交付",
+          items: [
+            "将生成图片交付改为临时 OSS 文件，降低应用服务器带宽压力",
+            "移除原有服务器存储下载路径，客户端确认后自动清理临时图片文件",
+          ],
+        },
+      ],
+    },
     {
       version: "1.1.1",
       date: "2026.07.17",
