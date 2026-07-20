@@ -63,6 +63,12 @@ function publicUrlFor(objectKey) {
   return `https://${bucket}.${region}.aliyuncs.com/${objectKey}`;
 }
 
+function readUpdaterSignature(filePath) {
+  const content = fs.readFileSync(filePath, 'utf8').trim();
+  const match = content.match(/Public signature:\s*([A-Za-z0-9+/=]+)/);
+  return match ? match[1] : content;
+}
+
 function objectUrlFor(objectKey) {
   const bucket = required(process.env.ALIYUN_OSS_BUCKET, 'ALIYUN_OSS_BUCKET');
   const region = required(process.env.ALIYUN_OSS_REGION, 'ALIYUN_OSS_REGION');
@@ -199,7 +205,7 @@ async function main() {
     platforms: {
       [platform]: {
         url: publicUrlFor(updateObjectKey),
-        signature: fs.readFileSync(signatureFilePath, 'utf8').trim(),
+        signature: readUpdaterSignature(signatureFilePath),
       },
     },
     uploaded,
