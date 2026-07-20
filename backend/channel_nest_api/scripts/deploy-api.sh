@@ -73,6 +73,13 @@ npm run migrate
 
 ln -sfn "\${RELEASE_DIR}" "\${REMOTE_DIR}/current"
 
+if command -v lsof >/dev/null 2>&1; then
+  for pid in \$(lsof -tiTCP:"\${PORT}" -sTCP:LISTEN 2>/dev/null || true); do
+    kill "\${pid}" >/dev/null 2>&1 || true
+  done
+  sleep 1
+fi
+
 if command -v pm2 >/dev/null 2>&1; then
   pm2 delete "\${SERVICE_NAME}" >/dev/null 2>&1 || true
   pm2 delete "\${WORKER_NAME}" >/dev/null 2>&1 || true
@@ -85,11 +92,6 @@ else
   fi
   if [[ -f "\${REMOTE_DIR}/worker.pid" ]]; then
     kill "\$(cat "\${REMOTE_DIR}/worker.pid")" >/dev/null 2>&1 || true
-  fi
-  if command -v lsof >/dev/null 2>&1; then
-    for pid in \$(lsof -tiTCP:"\${PORT}" -sTCP:LISTEN 2>/dev/null || true); do
-      kill "\${pid}" >/dev/null 2>&1 || true
-    done
   fi
   cd "\${REMOTE_DIR}/current"
   nohup node bin/www >> "\${REMOTE_DIR}/service.log" 2>&1 &
